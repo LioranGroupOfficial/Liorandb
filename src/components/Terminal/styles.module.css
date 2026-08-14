@@ -1,0 +1,76 @@
+.terminal {
+  margin: 1.25rem 0;
+  border: 1px solid #35363a;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #17181b;
+  box-shadow: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  background: #1b1c20;
+  border-bottom: 1px solid #2c2d31;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+}
+
+.dot:nth-child(1) {
+  background: #fb7185;
+}
+
+.dot:nth-child(2) {
+  background: #facc15;
+}
+
+.dot:nth-child(3) {
+  background: #4ade80;
+}
+
+.title {
+  color: #e5e7eb;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.body {
+  padding: 0;
+  overflow-x: auto;
+  background: #17181b;
+}
+
+.body :global(.theme-code-block) {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #17181b;
+}
+
+.body :global(.theme-code-block pre),
+.body :global(pre) {
+  margin: 0;
+  padding: 1.15rem 1.2rem 1.2rem;
+  background: #17181b;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.body :global(code) {
+  background: transparent;
+}

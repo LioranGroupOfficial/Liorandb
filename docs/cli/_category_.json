@@ -1,0 +1,10 @@
+{
+  "label": "CLI",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "title": "CLI",
+    "description": "Stable CLI docs for @liorandb/cli@1.0.3."
+  }
+}
+

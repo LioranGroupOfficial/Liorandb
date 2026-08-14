@@ -1,0 +1,98 @@
+.panel {
+  margin: 1.5rem 0 2rem;
+  padding: 1.25rem;
+  border: 1px solid #35363a;
+  border-radius: 18px;
+  background: #17181b;
+}
+
+.header {
+  margin-bottom: 1rem;
+}
+
+.title {
+  margin: 0 0 0.35rem;
+  color: #f3f4f6;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: #a7acb2;
+  line-height: 1.65;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.label {
+  color: #cfd4da;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #3b3d42;
+  border-radius: 12px;
+  background: #202124;
+  color: #f3f4f6;
+  font: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #6b7280;
+}
+
+.results {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2c2d31;
+}
+
+.resultsTitle {
+  margin: 0 0 0.75rem;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.chip {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #35363a;
+  border-radius: 999px;
+  background: #202124;
+  color: #d3d7dc;
+  font-size: 0.92rem;
+}
+
+.note {
+  margin: 0.9rem 0 0;
+  color: #8f959c;
+  line-height: 1.65;
+}
+
+@media screen and (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

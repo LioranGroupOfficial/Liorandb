@@ -1,0 +1,10 @@
+{
+  "label": "Driver",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "title": "Driver",
+    "description": "JavaScript and TypeScript docs for @liorandb/driver@2.0.3."
+  }
+}
+

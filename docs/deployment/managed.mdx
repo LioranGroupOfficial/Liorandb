@@ -1,0 +1,775 @@
+---
+sidebar_position: 1
+title: Managed Deployment
+description: Full guide to the Caddy-based managed deployment pattern in db/deploy/managed.
+---
+
+import Terminal from '@site/src/components/Terminal';
+import {
+  DeploymentCode,
+  DeploymentSetupProvider,
+  DeploymentText,
+  DeploymentValue,
+} from '@site/src/components/DeploymentSetup';
+
+<DeploymentSetupProvider>
+
+The hostname pattern used throughout this page is:
+
+- <DeploymentText template="{{clientName}}.db.{{rootDomain}}" />
+- <DeploymentText template="{{clientName}}.grpc.{{rootDomain}}" />
+
+## What this deployment pattern is
+
+This is the recommended shape when you want one managed LioranDB environment
+for one customer or tenant:
+
+- public HTTPS for the HTTP API
+- public TLS on `:443` for gRPC
+- metrics reachable only inside Docker
+- persistent named-volume storage
+- bootstrap password loaded from a mounted file
+- Caddy handling all internet-facing TLS
+
+## The three template files
+
+The managed deployment directory contains:
+
+- `README.md`
+- `compose.example.yaml`
+- `Caddyfile.example`
+
+Each file has a different job.
+
+## `Caddyfile.example`
+
+The routing shape for your deployment is:
+
+<DeploymentCode
+  language="caddy"
+  template={`{{httpDomain}} {
+    reverse_proxy liorandb:27018
+}
+
+{{grpcDomain}} {
+    reverse_proxy h2c://liorandb:27019
+}`}
+/>
+
+### What the HTTP block does
+
+<DeploymentCode
+  language="caddy"
+  template={`{{httpDomain}} {
+    reverse_proxy liorandb:27018
+}`}
+/>
+
+This means:
+
+- Caddy listens for public requests sent to <DeploymentValue field="httpDomain" />
+- Caddy terminates public TLS for that hostname
+- Caddy forwards internal traffic to `liorandb:27018`
+
+This is the public HTTP entrypoint for:
+
+- `/live`
+- `/ready`
+- `/v1`
+- driver HTTP requests
+- admin HTTP APIs
+
+### What the gRPC block does
+
+<DeploymentCode
+  language="caddy"
+  template={`{{grpcDomain}} {
+    reverse_proxy h2c://liorandb:27019
+}`}
+/>
+
+This means:
+
+- Caddy listens for public gRPC traffic on <DeploymentValue field="grpcDomain" />
+- Caddy terminates public TLS on port `443`
+- Caddy forwards internal traffic as cleartext HTTP/2 to `liorandb:27019`
+
+`h2c` is important here because the upstream hop is private Docker-network
+traffic, not public TLS.
+
+### Why this split matters
+
+This pattern gives you:
+
+- one public hostname for the HTTP-facing API
+- one public hostname for gRPC
+- one internal HTTP bind
+- one internal gRPC bind
+
+That matches the intended driver discovery flow cleanly.
+
+## `compose.example.yaml`
+
+The Compose template creates two services:
+
+- `liorandb`
+- `caddy`
+
+## The `liorandb` service
+
+Core shape:
+
+<DeploymentCode
+  language="yaml"
+  template={`image: liorandb/liorandb:pre-alpha
+container_name: liorandb-{{clientName}}
+restart: unless-stopped
+cpus: 2.0
+mem_limit: 3.5g`}
+/>
+
+This gives you:
+
+- the published server image
+- a readable per-client container name
+- automatic restarts
+- basic CPU and memory constraints
+
+### Why there is no `command:` override
+
+The managed template intentionally keeps the image CMD unchanged.
+
+That means the image still boots with its baked-in server command and existing
+startup arguments. The deployment template only changes:
+
+- environment variables
+- reverse proxying
+- persistence
+- networking
+
+## Environment variables
+
+This is the managed shape:
+
+<DeploymentCode
+  language="text"
+  template={`LIORANDB_TLS_MODE=insecure
+LIORANDB_GRPC_BIND_ADDR=0.0.0.0:27019
+LIORANDB_METRICS_ADDR=0.0.0.0:27201
+LIORANDB_ADVERTISED_HTTP_ADDR={{httpDomain}}:443
+LIORANDB_ADVERTISED_GRPC_ADDR={{grpcDomain}}:443
+LIORANDB_BOOTSTRAP_PASSWORD_FILE=/run/liorandb/bootstrap-password.txt`}
+/>
+
+### What each variable does
+
+`LIORANDB_TLS_MODE=insecure`
+
+- public TLS is terminated by Caddy
+- the internal Docker hop remains plaintext
+- this is acceptable because that hop is private to Docker
+
+`LIORANDB_GRPC_BIND_ADDR=0.0.0.0:27019`
+
+- LioranDB listens internally for gRPC on `27019`
+
+`LIORANDB_METRICS_ADDR=0.0.0.0:27201`
+
+- metrics are exposed internally on `27201`
+
+<DeploymentText
+  template="`LIORANDB_ADVERTISED_HTTP_ADDR={{httpDomain}}:443`"
+/>
+
+- `/v1` should advertise the public HTTP authority clients must use
+
+<DeploymentText
+  template="`LIORANDB_ADVERTISED_GRPC_ADDR={{grpcDomain}}:443`"
+/>
+
+- `/v1` should advertise the public gRPC authority clients must use
+
+`LIORANDB_BOOTSTRAP_PASSWORD_FILE=/run/liorandb/bootstrap-password.txt`
+
+- the server reads the initial admin password from the mounted file
+
+## Why `expose:` is used instead of `ports:`
+
+The managed template should look like this:
+
+<DeploymentCode
+  language="yaml"
+  template={`expose:
+  - "27018"
+  - "27019"
+  - "27201"`}
+/>
+
+That makes the ports reachable to other containers, but not publicly published
+on the VPS host.
+
+This is one of the most important security properties of the deployment.
+
+## Persistence
+
+The data volume pattern should look like:
+
+<DeploymentCode
+  language="yaml"
+  template={`volumes:
+  - {{volumeName}}:/var/lib/liorandb/data
+  - ./clients/{{clientName}}/bootstrap-password.txt:/run/liorandb/bootstrap-password.txt:ro`}
+/>
+
+This gives you:
+
+- persistent database data in a named Docker volume
+- a read-only mounted bootstrap password file
+
+## Networks
+
+The network pattern should look like:
+
+<DeploymentCode
+  language="yaml"
+  template={`networks:
+  - public-edge
+  - metrics-private`}
+/>
+
+And the network definitions:
+
+<DeploymentCode
+  language="yaml"
+  template={`networks:
+  public-edge:
+  metrics-private:
+    internal: true`}
+/>
+
+That means:
+
+- `public-edge` is shared between Caddy and LioranDB
+- `metrics-private` is intentionally internal-only
+
+## The `caddy` service
+
+The public host port mapping should stay:
+
+<DeploymentCode
+  language="yaml"
+  template={`ports:
+  - "80:80"
+  - "443:443"
+  - "443:443/udp"`}
+/>
+
+That means only Caddy is exposed publicly.
+
+You should not publish:
+
+- `27018`
+- `27019`
+- `27201`
+
+directly on the VPS.
+
+## Fresh Ubuntu VPS guide
+
+This flow assumes:
+
+- today is Friday, August 14, 2026
+- Docker is already installed
+- Docker commands require `sudo`
+
+## 1. Point DNS first
+
+Create two `A` records pointing at your VPS public IP:
+
+<DeploymentCode
+  language="text"
+  template={`{{httpDomain}}   -> {{serverIp}}
+{{grpcDomain}} -> {{serverIp}}`}
+/>
+
+If you use Cloudflare, start with DNS only while validating the stack.
+
+## 2. SSH into the VPS and prepare directories
+
+<Terminal title="Prepare deployment directories">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo mkdir -p {{deployRoot}}
+sudo mkdir -p {{deployRoot}}/clients/{{clientName}}
+cd {{deployRoot}}`}
+/>
+
+</Terminal>
+
+## 3. Create the bootstrap password
+
+Generate a strong password:
+
+<Terminal title="Generate bootstrap password">
+
+<DeploymentCode
+  language="bash"
+  template={`openssl rand -base64 32 | sudo tee {{bootstrapPath}}`}
+/>
+
+</Terminal>
+
+Lock it down:
+
+<Terminal title="Restrict bootstrap password file">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo chmod 600 {{bootstrapPath}}`}
+/>
+
+</Terminal>
+
+View it once:
+
+<Terminal title="Read bootstrap password">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo cat {{bootstrapPath}}`}
+/>
+
+</Terminal>
+
+Save that password somewhere secure. This file is expected by the deployment
+template and is mounted read-only into the container.
+
+## 4. Create the Caddyfile
+
+<Terminal title="Edit Caddyfile">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo nano {{deployRoot}}/Caddyfile.example`}
+/>
+
+</Terminal>
+
+Paste:
+
+<DeploymentCode
+  language="caddy"
+  template={`{{httpDomain}} {
+    reverse_proxy liorandb:27018
+}
+
+{{grpcDomain}} {
+    reverse_proxy h2c://liorandb:27019
+}`}
+/>
+
+Save with:
+
+- `Ctrl+O`
+- `Enter`
+- `Ctrl+X`
+
+## 5. Create the Compose file
+
+<Terminal title="Edit Compose">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo nano {{deployRoot}}/compose.yaml`}
+/>
+
+</Terminal>
+
+Paste:
+
+<DeploymentCode
+  language="yaml"
+  template={`services:
+  liorandb:
+    image: liorandb/liorandb:pre-alpha
+    container_name: liorandb-{{clientName}}
+    restart: unless-stopped
+    cpus: 2.0
+    mem_limit: 3.5g
+    environment:
+      LIORANDB_TLS_MODE: insecure
+      LIORANDB_GRPC_BIND_ADDR: 0.0.0.0:27019
+      LIORANDB_METRICS_ADDR: 0.0.0.0:27201
+      LIORANDB_ADVERTISED_HTTP_ADDR: {{httpDomain}}:443
+      LIORANDB_ADVERTISED_GRPC_ADDR: {{grpcDomain}}:443
+      LIORANDB_BOOTSTRAP_PASSWORD_FILE: /run/liorandb/bootstrap-password.txt
+    expose:
+      - "27018"
+      - "27019"
+      - "27201"
+    volumes:
+      - {{volumeName}}:/var/lib/liorandb/data
+      - ./clients/{{clientName}}/bootstrap-password.txt:/run/liorandb/bootstrap-password.txt:ro
+    networks:
+      - public-edge
+      - metrics-private
+
+  caddy:
+    image: caddy:2
+    container_name: caddy-{{clientName}}
+    restart: unless-stopped
+    depends_on:
+      - liorandb
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - public-edge
+
+volumes:
+  {{volumeName}}:
+  caddy-data:
+  caddy-config:
+
+networks:
+  public-edge:
+  metrics-private:
+    internal: true`}
+/>
+
+## 6. Validate Compose before starting anything
+
+<Terminal title="Validate Compose">
+
+<DeploymentCode
+  language="bash"
+  template={`cd {{deployRoot}}
+sudo docker compose -f compose.yaml config`}
+/>
+
+</Terminal>
+
+If that prints normalized configuration without errors, the file structure and
+YAML are valid.
+
+## 7. Pull images
+
+<Terminal title="Pull images">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo docker compose -f compose.yaml pull
+sudo docker images`}
+/>
+
+</Terminal>
+
+You should pull:
+
+- `liorandb/liorandb:pre-alpha`
+- `caddy:2`
+
+## 8. Configure the firewall
+
+Keep SSH open:
+
+<Terminal title="Allow SSH">
+
+<DeploymentCode language="bash" template={`sudo ufw allow OpenSSH`} />
+
+</Terminal>
+
+Allow only public web/TLS traffic:
+
+<Terminal title="Allow web and TLS only">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 443/udp
+sudo ufw enable
+sudo ufw status`}
+/>
+
+</Terminal>
+
+Do not open:
+
+- `27018`
+- `27019`
+- `27201`
+
+Those should remain Docker-private.
+
+## 9. Start the deployment
+
+<Terminal title="Start the stack">
+
+<DeploymentCode
+  language="bash"
+  template={`cd {{deployRoot}}
+sudo docker compose -f compose.yaml up -d
+sudo docker compose -f compose.yaml ps`}
+/>
+
+</Terminal>
+
+You want both containers to show as up:
+
+- <DeploymentText template="liorandb-{{clientName}}" />
+- <DeploymentText template="caddy-{{clientName}}" />
+
+## 10. Inspect logs immediately
+
+LioranDB logs:
+
+<Terminal title="LioranDB logs">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo docker logs -f liorandb-{{clientName}}`}
+/>
+
+</Terminal>
+
+You should eventually see HTTP, gRPC, and metrics listeners.
+
+Caddy logs:
+
+<Terminal title="Caddy logs">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo docker logs -f caddy-{{clientName}}`}
+/>
+
+</Terminal>
+
+You want successful certificate acquisition for:
+
+- <DeploymentValue field="httpDomain" />
+- <DeploymentValue field="grpcDomain" />
+
+## 11. Check public listening ports
+
+<Terminal title="Check listening ports">
+
+<DeploymentCode language="bash" template={`sudo ss -tulpn`} />
+
+</Terminal>
+
+You should see public listeners roughly like:
+
+<DeploymentCode
+  language="text"
+  template={`0.0.0.0:80
+0.0.0.0:443`}
+/>
+
+You should not see:
+
+<DeploymentCode
+  language="text"
+  template={`0.0.0.0:27018
+0.0.0.0:27019
+0.0.0.0:27201`}
+/>
+
+That is the key security check.
+
+## 12. Test the public HTTP side
+
+<Terminal title="Test /live and /v1">
+
+<DeploymentCode
+  language="bash"
+  template={`curl -v https://{{httpDomain}}/live
+curl -v https://{{httpDomain}}/v1`}
+/>
+
+</Terminal>
+
+The important `/v1` response should advertise:
+
+<DeploymentCode
+  language="json"
+  template={`{
+  "http_addr": "{{httpDomain}}:443",
+  "grpc_addr": "{{grpcDomain}}:443"
+}`}
+/>
+
+:::danger Stop here if discovery is wrong
+If `/v1` still reports `0.0.0.0:27018` or `0.0.0.0:27019`, then the currently
+published `liorandb/liorandb:pre-alpha` image likely predates the advertised
+address changes. In that case, the template is right, but the image must be
+rebuilt and republished before this managed flow is safe to rely on.
+:::
+
+## 13. Test private metrics
+
+List Docker networks:
+
+<Terminal title="List Docker networks">
+
+<DeploymentCode language="bash" template={`sudo docker network ls`} />
+
+</Terminal>
+
+Compose will usually create something like:
+
+<DeploymentText template="{{metricsNetworkName}}" />
+
+Then test metrics from a temporary container:
+
+<Terminal title="Test private metrics">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo docker run --rm \\
+  --network {{metricsNetworkName}} \\
+  curlimages/curl \\
+  http://liorandb:27201/metrics`}
+/>
+
+</Terminal>
+
+You should get Prometheus-format output.
+
+## 14. Build the final driver URI
+
+Your managed connection string becomes:
+
+<DeploymentCode
+  language="text"
+  template={`liorandb://admin:<your-encoded-password>@{{httpDomain}}:443/default`}
+/>
+
+If the password contains characters like:
+
+- `@`
+- `#`
+- `!`
+- `/`
+- `:`
+- `%`
+
+URL-encode it first.
+
+Examples:
+
+- `@` -> `%40`
+- `!` -> `%21`
+- `#` -> `%23`
+
+Expected discovery flow:
+
+<DeploymentCode
+  language="text"
+  template={`liorandb://admin:<your-encoded-password>@{{httpDomain}}:443/default
+  -> HTTPS to {{httpDomain}}:443
+  -> GET /v1
+  -> grpc_addr = {{grpcDomain}}:443
+  -> TLS gRPC through Caddy when needed`}
+/>
+
+## 15. Verify persistence before calling it done
+
+After inserting test data, restart the database container:
+
+<Terminal title="Restart the database">
+
+<DeploymentCode
+  language="bash"
+  template={`sudo docker restart liorandb-{{clientName}}`}
+/>
+
+</Terminal>
+
+Verify the data is still there.
+
+Then test a fuller cycle:
+
+<Terminal title="Down and up without deleting the volume">
+
+<DeploymentCode
+  language="bash"
+  template={`cd {{deployRoot}}
+sudo docker compose -f compose.yaml down
+sudo docker volume ls | grep liorandb
+sudo docker compose -f compose.yaml up -d`}
+/>
+
+</Terminal>
+
+Your data should remain because the named volume is mounted at
+`/var/lib/liorandb/data`.
+
+Do not run:
+
+<DeploymentCode language="bash" template={`sudo docker compose down -v`} />
+
+unless you intentionally want to delete the database volume.
+
+## Updating LioranDB later
+
+When a newer server image is published:
+
+<Terminal title="Update the database image">
+
+<DeploymentCode
+  language="bash"
+  template={`cd {{deployRoot}}
+sudo docker compose pull liorandb
+sudo docker compose up -d`}
+/>
+
+</Terminal>
+
+The persistent data volume remains untouched.
+
+## Final topology
+
+<DeploymentCode
+  language="text"
+  template={`Internet
+   |
+   |-- https://{{httpDomain}}
+   |            |
+   |            v
+   |          Caddy
+   |            |
+   |            v
+   |     liorandb:27018
+   |
+   '-- {{grpcDomain}}:443
+                |
+                v
+              Caddy
+                |
+                v
+         h2c://liorandb:27019
+
+         metrics :27201
+               locked inside Docker
+
+         data
+               v
+      {{volumeName}}`}
+/>
+
+## Final preflight reminder
+
+Before you even begin the VPS rollout, verify that the currently published
+`liorandb/liorandb:pre-alpha` image was built after the advertised HTTP and
+gRPC address changes landed. If not, the deployment files can be perfect and
+the older binary can still ignore the new environment variables.
+
+</DeploymentSetupProvider>

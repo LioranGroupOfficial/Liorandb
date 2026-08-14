@@ -1,0 +1,282 @@
+---
+sidebar_position: 1
+title: Driver Overview
+description: Deep overview of @liorandb/driver@2.0.3 and its public API surface.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Terminal from '@site/src/components/Terminal';
+
+This section is written from the real package source in
+`C:\pro_projects\Liorandb-Rust\sdks\ldb-driver\ts-js\src`, not just from a
+marketing README.
+
+The stable package documented here is:
+
+<Terminal title="Install @liorandb/driver@2.0.3">
+
+```bash
+npm i @liorandb/driver@2.0.3
+```
+
+</Terminal>
+
+## Node.js and package basics
+
+- Package name: `@liorandb/driver`
+- Current documented npm version: `2.0.3`
+- Runtime module format: ESM
+- Node.js requirement: `18+`
+- Native `fetch` is expected by the HTTP transport
+
+## What the package exports
+
+The source export barrel at `src/index.ts` exposes these major areas:
+
+- client entrypoints: `LioranDBClient`, `MongoClient`
+- handles: `Db`, `Collection`
+- cursors: `FindCursor`, `AggregationCursor`
+- auth/admin services: `AuthService`, `UsersService`, `RolesService`, `ClusterService`, `BackupsService`, `SettingsService`
+- config helpers: `parseConnectionString()`, `normalizeMongoClientConfig()`, `normalizeLioranDBClientConfig()`, `isNormalizedConfig()`, `defaultSchemeForProtocol()`
+- transports: `HttpTransport`, `HttpDataTransport`, `GrpcDataTransport`
+- errors and warning codes
+- the full exported type surface for auth, config, admin payloads, transport diagnostics, and CRUD
+
+## The real mental model
+
+```text
+LioranDBClient
+  -> Db
+    -> Collection<T>
+      -> CRUD methods
+      -> FindCursor<T>
+      -> AggregationCursor<TResult>
+
+LioranDBClient
+  -> auth
+  -> users
+  -> roles
+  -> cluster
+  -> backups
+  -> settings
+```
+
+### `LioranDBClient`
+
+This is the root object. It owns:
+
+- configuration normalization
+- HTTP transport creation
+- gRPC transport resolution when needed
+- token storage through `TokenManager`
+- auth convenience methods
+- service handles
+- active cursor lifecycle
+- diagnostic headers and response observers
+
+### `Db`
+
+This scopes work to one database and exposes:
+
+- `collection(name)`
+- `createCollection(name)`
+- `listCollections()`
+- `dropCollection(name)`
+- `dropDatabase()`
+- `query(collection, filter?, options?)`
+
+### `Collection<TSchema>`
+
+This is the main application handle for document work. It exposes:
+
+- `insertOne()`
+- `insertMany()`
+- `find()`
+- `findOne()`
+- `findManyByIds()`
+- `updateOne()`
+- `updateMany()`
+- `deleteOne()`
+- `deleteMany()`
+- `aggregate()`
+- `drop()`
+
+### `FindCursor<TSchema>`
+
+This is a chainable, async-iterable cursor abstraction. It supports:
+
+- query-shaping methods such as `filter()`, `limit()`, `skip()`, `sort()`, `project()`
+- execution methods such as `next()`, `tryNext()`, `hasNext()`, `toArray()`
+- iteration helpers such as `forEach()` and `map()`
+- lifecycle helpers such as `rewind()`, `clone()`, and `close()`
+
+### `AggregationCursor<TResult>`
+
+This is the aggregation equivalent. It is also async-iterable and supports:
+
+- `next()`
+- `tryNext()`
+- `hasNext()`
+- `toArray()`
+- `forEach()`
+- `map()`
+- `rewind()`
+- `clone()`
+- `close()`
+
+## First end-to-end example
+
+<Tabs groupId="code" queryString="code" defaultValue="ts">
+  <TabItem value="ts" label="TypeScript">
+
+```ts
+import {LioranDBClient} from "@liorandb/driver";
+
+type User = {
+  _id?: string;
+  email: string;
+  active: boolean;
+  age: number;
+};
+
+const client = await LioranDBClient.connect(
+  "liorandb://admin:password@127.0.0.1:27018/default",
+);
+
+try {
+  const db = client.db("default");
+  const users = db.collection<User>("users");
+
+  const inserted = await users.insertOne({
+    email: "user@example.com",
+    active: true,
+    age: 18,
+  });
+
+  const found = await users.findOne({email: "user@example.com"});
+
+  const activeUsers = await users
+    .find({active: true})
+    .sort({email: 1})
+    .limit(20)
+    .toArray();
+
+  console.log({
+    insertedId: inserted.insertedId,
+    found,
+    count: activeUsers.length,
+  });
+} finally {
+  await client.close();
+}
+```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```js
+import {LioranDBClient} from "@liorandb/driver";
+
+const client = await LioranDBClient.connect(
+  "liorandb://admin:password@127.0.0.1:27018/default",
+);
+
+try {
+  const db = client.db("default");
+  const users = db.collection("users");
+
+  const inserted = await users.insertOne({
+    email: "user@example.com",
+    active: true,
+    age: 18,
+  });
+
+  const found = await users.findOne({email: "user@example.com"});
+
+  const activeUsers = await users
+    .find({active: true})
+    .sort({email: 1})
+    .limit(20)
+    .toArray();
+
+  console.log({
+    insertedId: inserted.insertedId,
+    found,
+    count: activeUsers.length,
+  });
+} finally {
+  await client.close();
+}
+```
+
+  </TabItem>
+</Tabs>
+
+Representative output:
+
+<Terminal title="Application output">
+
+```json
+{
+  "insertedId": "01K2EXAMPLE",
+  "found": {
+    "_id": "01K2EXAMPLE",
+    "email": "user@example.com",
+    "active": true,
+    "age": 18
+  },
+  "count": 1
+}
+```
+
+</Terminal>
+
+## How the driver executes that example
+
+1. `LioranDBClient.connect(...)` parses the connection string and normalizes it into an immutable config object.
+2. The client checks server availability using HTTP when an HTTP-capable address exists.
+3. If credentials are present, `auth.login()` runs automatically during `connect()`.
+4. `client.db("default")` creates a `Db` handle.
+5. `db.collection<User>("users")` creates a typed `Collection<User>`.
+6. `insertOne()` serializes the document and delegates to the active data transport.
+7. `findOne()` issues a one-shot read request.
+8. `find(...).sort(...).limit(...).toArray()` creates a `FindCursor`, applies query options, fetches pages, and materializes the final result.
+9. `close()` logs out when configured, closes active transports, and closes active cursors.
+
+## Supported connection schemes
+
+The connection parser accepts:
+
+```text
+liorandb://
+liorandb+http://
+liorandb+https://
+http://
+https://
+grpc://
+```
+
+Examples:
+
+```text
+liorandb://admin:password@127.0.0.1:27018/default
+liorandb://admin:encoded%40password@client.db.example.com:443/default
+liorandb+https://admin:password@db.example.com/default
+grpc://db.example.com:443/default
+```
+
+## Public API areas worth learning in order
+
+1. `LioranDBClient` configuration and lifecycle
+2. `Db` and `Collection<TSchema>`
+3. `FindCursor` and `AggregationCursor`
+4. auth and admin service handles
+5. exports, types, transports, and error classes
+
+## Read next
+
+- [Connection and client](/docs/driver/connection-and-client?code=ts)
+- [Database, collections, and cursors](/docs/driver/database-and-collections?code=ts)
+- [Auth and admin services](/docs/driver/auth-and-admin?code=ts)
+- [Package exports and reference](/docs/driver/exports-reference?code=ts)

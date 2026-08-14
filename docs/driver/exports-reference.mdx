@@ -1,0 +1,238 @@
+---
+sidebar_position: 5
+title: Package Exports and Reference
+description: Export-by-export reference for the public surface of @liorandb/driver@2.0.3.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+This page summarizes the public exports from `src/index.ts` so the docs site
+matches the package surface more closely.
+
+## Top-level classes
+
+- `LioranDBClient`
+- `MongoClient`
+- `Db`
+- `Collection`
+- `FindCursor`
+- `AggregationCursor`
+- `AuthService`
+- `UsersService`
+- `RolesService`
+- `ClusterService`
+- `BackupsService`
+- `SettingsService`
+- `TokenManager`
+- `HttpTransport`
+- `HttpDataTransport`
+- `GrpcDataTransport`
+
+## Top-level config helpers
+
+- `parseConnectionString()`
+- `normalizeMongoClientConfig()`
+- `normalizeLioranDBClientConfig()`
+- `isNormalizedConfig()`
+- `defaultSchemeForProtocol()`
+
+## Exported auth types
+
+- `AuthTokens`
+- `AuthLoginResponse`
+- `Principal`
+- `SessionStatus`
+- `SessionView`
+
+## Exported common config and diagnostic types
+
+- `ClientTransport`
+- `ClientProtocol`
+- `ConnectionStringScheme`
+- `MutableUriOptions`
+- `ImmutableUriOptions`
+- `MutableMongoClientConfig`
+- `ImmutableMongoClientConfig`
+- `TransportResponseDiagnostics`
+- `TransportResponseObserver`
+- `DiagnosticHeaderAccessor`
+- `DeepReadonly`
+
+## Exported CRUD and cursor types
+
+- `Document`
+- `JsonPrimitive`
+- `JsonObject`
+- `JsonArray`
+- `JsonValue`
+- `WithId<TSchema>`
+- `OptionalUnlessRequiredId<TSchema>`
+- `Filter<TSchema>`
+- `Projection<TSchema>`
+- `SortDirection`
+- `SortEntry`
+- `Sort`
+- `FindOptions<TSchema>`
+- `AggregateOptions`
+- `CursorOperationOptions`
+- `WriteOptions`
+- `UpdateOptions`
+- `InsertOneResult`
+- `InsertManyResult`
+- `UpdateResult`
+- `DeleteResult`
+- `CreateCollectionResult`
+- `DropCollectionResult`
+
+## Exported transport types
+
+- `HttpApiErrorBody`
+- `HttpApiEnvelope`
+- `HttpSuccessEnvelope`
+- `HttpErrorEnvelope`
+- `HttpRequestOptions`
+- `CursorPageState`
+- `FindPage`
+- `LioranDataTransport`
+- `TransportCollectionContext`
+
+## Exported admin and management types
+
+- `PermissionName`
+- `RoleGrantScope`
+- `PermissionGrant`
+- `RoleRecord`
+- `UserRecord`
+- `CreateUserInput`
+- `UpdateUserInput`
+- `ResetUserPasswordInput`
+- `CreateRoleInput`
+- `UpdateRoleInput`
+- `LiveStatus`
+- `StateTransition`
+- `ReadyStatus`
+- `ServerInfo`
+- `NodeConfigView`
+- `ClusterSummary`
+- `ClusterPartitionPlacement`
+- `PartitionHealthView`
+- `BackupCreateInput`
+- `BackupJobType`
+- `BackupJobStatus`
+- `BackupScope`
+- `ScheduleType`
+- `BackupSchedule`
+- `BackupRetentionSettings`
+- `BackupSettings`
+- `CorsSettings`
+- `BackupJobRecord`
+- `RestoreInput`
+- `RestoreJobStatus`
+- `RestoreValidationResults`
+- `NodeRestoreProgress`
+- `RestoreJobRecord`
+- `RestoreResponse`
+- `LimitOverride`
+- `PerformanceSettings`
+- `LimitSettings`
+- `RedactedSettingsMap`
+- `AuthSessionList`
+- `PermissionsList`
+- `UserList`
+- `RoleList`
+- `BackupJobList`
+- `ClusterHealthSnapshot`
+- `LoginPayload`
+
+## Exported errors
+
+### Base error layer
+
+- `LioranDriverError`
+- `ApiError`
+- `AuthError`
+- `NetworkError`
+- `TimeoutError`
+- `ConfigurationError`
+- `SerializationError`
+
+### Auth-specific errors
+
+- `AuthenticationError`
+- `AuthorizationError`
+- `PasswordChangeRequiredError`
+- `SessionExpiredError`
+
+### Cursor and client lifecycle errors
+
+- `ClientClosedError`
+- `CursorClosedError`
+- `CursorInitializedError`
+
+### Connection and protocol errors
+
+- `ConnectionError`
+- `DnsResolutionError`
+- `RequestAbortedError`
+- `TlsError`
+- `ProtocolError`
+
+### Server-side classified errors
+
+- `LioranServerError`
+- `ConflictError`
+- `DuplicateKeyError`
+- `NotFoundError`
+- `ServerNotReadyError`
+- `ServerOverloadedError`
+- `ServerUnavailableError`
+- `ValidationError`
+
+## Exported constants
+
+- `DRIVER_VERSION`
+- `DRIVER_ERROR_CODES`
+- `DRIVER_WARNING_CODES`
+
+## Practical examples of helper exports
+
+### `defaultSchemeForProtocol("https")`
+
+Returns:
+
+<Terminal title="Helper result">
+
+```text
+liorandb+https
+```
+
+</Terminal>
+
+### `isNormalizedConfig(value)`
+
+Useful when a function may receive either raw options or already-normalized
+config and needs to branch safely.
+
+### `TransportResponseObserver`
+
+Use this when you need request-by-request diagnostics without patching the
+driver internals.
+
+### `OptionalUnlessRequiredId<TSchema>`
+
+This type lets inserts omit `_id` when your schema does not require it, while
+still preserving `_id` if your schema explicitly defines it.
+
+## What is intentionally not documented as public API
+
+The package contains many internal helpers that are not exported from
+`src/index.ts`, including:
+
+- low-level URL utilities
+- serialization internals
+- error-classification internals
+- transport implementation internals
+- service-local helper functions such as `withTimeout()` and role grant mappers
+
+Those are useful for understanding the codebase, but they are not part of the
+promised top-level package surface.

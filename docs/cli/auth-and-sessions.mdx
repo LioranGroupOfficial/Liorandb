@@ -1,0 +1,166 @@
+---
+sidebar_position: 3
+title: Auth and Sessions
+description: Login, logout, session refresh, password rotation, and what the CLI persists locally.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+Authentication flows live mainly in:
+
+- `src/commands/auth.ts`
+- `src/client/create-client.ts`
+- `src/auth/session-store.ts`
+
+## First local login
+
+For the solo Docker quickstart, the bootstrap password is:
+
+```text
+Q7m!Z2x@L9p#R4vK
+```
+
+Log in once:
+
+<Terminal title="Bootstrap login">
+
+```bash
+liorandb login admin --password "Q7m!Z2x@L9p#R4vK"
+```
+
+</Terminal>
+
+Then rotate it immediately:
+
+<Terminal title="Rotate password">
+
+```bash
+liorandb change-password --password "YOUR_NEW_STRONG_PASSWORD"
+```
+
+</Terminal>
+
+## Login modes
+
+The CLI supports several styles:
+
+<Terminal title="Login examples">
+
+```bash
+liorandb login
+liorandb login admin
+liorandb login admin --password "super-secret"
+printf 'super-secret' | liorandb login admin --password-stdin
+```
+
+</Terminal>
+
+Behavior from the source:
+
+- interactive login can prompt for missing values
+- `--password-stdin` is supported for automation
+- the CLI stores the resulting refresh token after a successful login
+
+## What is stored after login
+
+The session store persists this per profile:
+
+- `refreshToken`
+- `userId`
+- `username`
+- `sessionId`
+- `updatedAt`
+
+It does not store:
+
+- your plaintext password
+- access tokens
+
+By default, sessions are written under:
+
+```text
+~/.liorandb/state/sessions.json
+```
+
+You can override that root with `LIORANDB_STATE_DIR`.
+
+## How command authentication works
+
+When a command needs an authenticated client, the helper in
+`src/client/create-client.ts` does this:
+
+1. load the stored refresh token for the selected profile
+2. call `client.auth.refresh(...)`
+3. save the fresh login response back to the session store
+4. if the session has expired, try re-login from credentials embedded in the connection string
+5. if refresh and re-login both fail, clear stored session state
+
+That is why the CLI can often keep working across commands without asking you
+to log in every time.
+
+## Session commands
+
+<Terminal title="Session commands">
+
+```bash
+liorandb whoami
+liorandb sessions
+liorandb revoke-session <session-id>
+liorandb logout
+liorandb logout --all
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Whoami output">
+
+```json
+{
+  "username": "admin",
+  "user_id": "01K2ADMINUSER",
+  "roles": ["cluster-admin"]
+}
+```
+
+</Terminal>
+
+## Expired sessions
+
+If the refresh token is no longer valid:
+
+- the CLI can clear the broken stored session
+- it may recover automatically if your stored connection URL contains reusable credentials
+- otherwise it will tell you to run `liorandb login`
+
+## Password changes
+
+The CLI exposes:
+
+- `change-password` for the current authenticated user
+- `user reset-password <id>` for administrators resetting someone else
+
+The normal bootstrap flow is:
+
+1. log in with the generated or default bootstrap password
+2. run `liorandb change-password`
+3. update any stored connection strings if they embed the old password
+
+## Why stdin is safer than `--password`
+
+Passing passwords directly in command arguments can leak into:
+
+- shell history
+- process inspection
+- pasted troubleshooting snippets
+
+For automation, prefer:
+
+<Terminal title="Safer non-interactive login">
+
+```bash
+printf '%s' "$LIORANDB_PASSWORD" | liorandb login admin --password-stdin
+```
+
+</Terminal>

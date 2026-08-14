@@ -1,0 +1,206 @@
+---
+sidebar_position: 1
+title: CLI Overview
+description: Source-backed overview of @liorandb/cli@1.0.3 and its real command surface.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+This section is written from the real CLI package source in
+`C:\pro_projects\Liorandb-Rust\sdks\ldb-cli\ts-js\src`.
+
+The stable CLI package documented here is:
+
+<Terminal title="Install @liorandb/cli@1.0.3">
+
+```bash
+npm i -g @liorandb/cli@1.0.3
+```
+
+</Terminal>
+
+## What the CLI actually does
+
+The `liorandb` binary is an operator-facing tool built on top of
+`@liorandb/driver`. From the source, it is responsible for:
+
+- storing local CLI profiles
+- storing per-profile refresh-token sessions
+- logging in and rotating passwords
+- picking output modes for humans and automation
+- performing CRUD directly from the terminal
+- managing users, roles, permissions, settings, backups, and cluster operations
+- running an interactive database shell with completion and history
+
+## Real global options
+
+The root command in `src/cli.ts` registers these global flags:
+
+- `--profile <name>`
+- `--url <url>`
+- `--output <format>`
+- `--json`
+- `--quiet`
+- `--no-color`
+- `--debug`
+
+These are resolved into runtime options before command handlers run:
+
+- `--quiet` forces output mode `quiet`
+- `--json` forces output mode `json`
+- `--output` accepts `table`, `json`, `ndjson`, or `quiet`
+- `--url` overrides the stored profile URL for just the current command
+
+## Command map from the source
+
+### Setup and identity
+
+- `init`
+- `set url`
+- `set output`
+- `set db`
+- `set metrics-url`
+- `get url`
+- `get output`
+- `get metrics-url`
+- `config`
+- `profile list | create | use | show | delete`
+- `login`
+- `logout`
+- `whoami`
+- `sessions`
+- `revoke-session`
+- `change-password`
+
+### Database and collection commands
+
+- `db list | create | drop | use | current`
+- `collection list | create | drop`
+
+### CRUD commands
+
+- `find`
+- `find-one`
+- `insert-one`
+- `insert-many`
+- `update-one`
+- `update-many`
+- `delete-one`
+- `delete-many`
+- `aggregate`
+
+### Administration and operations
+
+- `user list | show | create | update | delete | reset-password | revoke-sessions`
+- `role list | show | create | update | delete`
+- `permission list`
+- `settings show | get | set`
+- `cors list | add | remove`
+- `status`
+- `health`
+- `doctor`
+- `metrics`
+- `stats`
+- `cluster status | nodes | partitions | health | checkpoint | compact`
+- `backup list | create | show | verify | delete | restore`
+
+### Interactive mode
+
+- `shell`
+
+## Typical first-time local flow
+
+<Terminal title="Bootstrap CLI workflow">
+
+```bash
+liorandb init
+liorandb set url liorandb://admin:Q7m%21Z2x%40L9p%23R4vK@127.0.0.1:27018/default
+liorandb login admin --password "Q7m!Z2x@L9p#R4vK"
+liorandb change-password --password "YOUR_NEW_STRONG_PASSWORD"
+liorandb db use default
+liorandb collection create users
+liorandb insert-one users --json "{\"name\":\"Ada\",\"active\":true}"
+liorandb find users --filter "{\"active\":true}"
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Representative output">
+
+```text
+Created collection users in default.
+Inserted document into users.
++-----------+--------+
+| name      | active |
++-----------+--------+
+| Ada       | true   |
++-----------+--------+
+```
+
+</Terminal>
+
+## Output modes
+
+The CLI printer in `src/output/printer.ts` supports four modes:
+
+- `table`: best for humans and default profile usage
+- `json`: one pretty-printed JSON value
+- `ndjson`: one compact JSON object per line
+- `quiet`: print only the most minimal scalar output, or nothing for record sets
+
+Example:
+
+<Terminal title="Machine-readable output">
+
+```bash
+liorandb find users --filter "{\"active\":true}" --json
+liorandb find users --filter "{\"active\":true}" --output ndjson
+```
+
+</Terminal>
+
+## Config and session storage
+
+The source stores two different kinds of local state:
+
+- config in a `conf`-managed CLI config file, including current profile, URL, output mode, active database, and metrics URL
+- session state in `~/.liorandb/state/sessions.json` unless `LIORANDB_STATE_DIR` overrides the state root
+
+What gets persisted:
+
+- profile URL
+- default output format
+- selected database
+- metrics URL
+- refresh token
+- session ID
+- last authenticated username
+
+What does not get persisted:
+
+- plaintext passwords
+- short-lived access tokens
+
+## Mental model
+
+```text
+global flags
+  -> runtime context
+    -> selected profile
+    -> resolved output mode
+    -> URL override if present
+
+commands
+  -> authenticated client when needed
+  -> Printer for table/json/ndjson/quiet output
+  -> config store and session store for persistence
+```
+
+## Read next
+
+- [Config and profiles](/docs/cli/config-and-profiles)
+- [Auth and sessions](/docs/cli/auth-and-sessions)
+- [Data and CRUD](/docs/cli/data-and-crud)
+- [Admin, ops, and shell](/docs/cli/admin-ops-and-shell)

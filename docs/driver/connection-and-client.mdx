@@ -1,0 +1,457 @@
+---
+sidebar_position: 2
+title: Connection and Client
+description: Detailed docs for connection parsing, client options, lifecycle, and diagnostics.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Terminal from '@site/src/components/Terminal';
+
+This page documents the public client surface exposed by:
+
+- `LioranDBClient`
+- `MongoClient` alias
+- `parseConnectionString()`
+- `normalizeMongoClientConfig()`
+- `normalizeLioranDBClientConfig()`
+- `isNormalizedConfig()`
+- `defaultSchemeForProtocol()`
+
+## Constructor forms
+
+The source defines:
+
+```ts
+type LioranDBClientConstructorInput = string | MongoClientObjectOptions;
+```
+
+That means you can construct the client from:
+
+- a connection string
+- an object configuration
+
+### Direct constructor
+
+```ts
+new LioranDBClient(input, options?)
+```
+
+### Convenience constructor
+
+```ts
+await LioranDBClient.connect(input, options?)
+```
+
+`LioranDBClient.connect()` just constructs a client and then calls `connect()`.
+
+## Connection string helpers
+
+### `parseConnectionString(connectionString, overrides?)`
+
+This is the public parser used internally by the client.
+
+What it does:
+
+- validates the URI
+- validates the scheme
+- decodes username, password, and database path
+- merges URI query options with programmatic overrides
+- infers protocol defaults
+- normalizes ports, transport, TLS, and timeouts
+- returns an immutable normalized config
+
+Representative use:
+
+<Tabs groupId="code" queryString="code" defaultValue="ts">
+  <TabItem value="ts" label="TypeScript">
+
+```ts
+import {parseConnectionString} from "@liorandb/driver";
+
+const config = parseConnectionString(
+  "liorandb://admin:password@127.0.0.1:27018/default?requestTimeoutMS=5000",
+);
+
+console.log(config.transport, config.requestTimeoutMS, config.origin);
+```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```js
+import {parseConnectionString} from "@liorandb/driver";
+
+const config = parseConnectionString(
+  "liorandb://admin:password@127.0.0.1:27018/default?requestTimeoutMS=5000",
+);
+
+console.log(config.transport, config.requestTimeoutMS, config.origin);
+```
+
+  </TabItem>
+</Tabs>
+
+Representative output:
+
+<Terminal title="Parser output">
+
+```text
+auto 5000 http://127.0.0.1:27018
+```
+
+</Terminal>
+
+### `normalizeMongoClientConfig(input, overrides?)`
+
+This performs the same normalization flow for object-based configuration.
+
+### `normalizeLioranDBClientConfig(...)`
+
+This is an alias of `normalizeMongoClientConfig(...)`.
+
+### `isNormalizedConfig(value)`
+
+This is a type guard. It returns `true` when the value already looks like an
+immutable normalized config.
+
+### `defaultSchemeForProtocol(protocol)`
+
+This maps:
+
+- `"grpc"` -> `grpc`
+- `"https"` -> `liorandb+https`
+- `"http"` -> `liorandb+http`
+
+## Supported schemes
+
+```text
+liorandb://
+liorandb+http://
+liorandb+https://
+http://
+https://
+grpc://
+```
+
+## Important connection rules
+
+### Username and password must appear together
+
+The parser rejects partial credentials.
+
+### Passwords with reserved URI characters must be encoded
+
+```text
+Raw:     N8v@K3m!T7q#X2pL
+Encoded: N8v%40K3m%21T7q%23X2pL
+```
+
+### `liorandb://` uses host-aware defaults
+
+- loopback hosts such as `127.0.0.1` and `localhost` default toward plaintext HTTP behavior
+- non-loopback hosts default toward HTTPS behavior
+
+### `grpc://` produces a gRPC-only config
+
+That means HTTP-only operations such as login or admin APIs require an
+HTTP-capable address instead.
+
+## Object config shape
+
+The source-exposed object type is:
+
+```ts
+interface MongoClientObjectOptions {
+  host: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  database?: string;
+  protocol?: "http" | "https" | "grpc";
+
+  tls?: boolean;
+  timeoutMS?: number;
+  connectTimeoutMS?: number;
+  requestTimeoutMS?: number;
+  grpcChannels?: number;
+  maxRetries?: number;
+  retryDelayMS?: number;
+  autoRefreshTokens?: boolean;
+  logoutOnClose?: boolean;
+  appName?: string;
+  authSource?: string;
+  transport?: "http" | "grpc" | "auto";
+  slowRequestThresholdMS?: number;
+  onWarning?: (warning) => void;
+}
+```
+
+## Important options
+
+### `transport`
+
+```ts
+"http" | "grpc" | "auto"
+```
+
+- `"http"` forces HTTP for data operations
+- `"grpc"` forces gRPC for data operations
+- `"auto"` lets the client prefer HTTP when possible and resolve gRPC only when needed
+
+### `tls`
+
+- `https` implies TLS unless explicitly misconfigured
+- `http` with `tls: true` is rejected
+- `https` with `tls: false` is rejected
+
+### `timeoutMS`
+
+A shared fallback for:
+
+- `connectTimeoutMS`
+- `requestTimeoutMS`
+
+### `grpcChannels`
+
+Used when gRPC transport is active and multiple channels are desired.
+
+### `maxRetries` and `retryDelayMS`
+
+These control retry behavior for retryable transient failures.
+
+### `autoRefreshTokens`
+
+If not disabled, the HTTP transport can automatically refresh access tokens
+when the server signals session expiry and a refresh token is available.
+
+### `logoutOnClose`
+
+When `true` or omitted, `close()` performs best-effort logout if an access token
+exists.
+
+### `slowRequestThresholdMS`
+
+If set, the client can emit warnings when requests exceed that threshold.
+
+### `onWarning`
+
+Receives non-fatal warnings.
+
+Example:
+
+<Tabs groupId="code" queryString="code" defaultValue="ts">
+  <TabItem value="ts" label="TypeScript">
+
+```ts
+const client = new LioranDBClient(uri, {
+  slowRequestThresholdMS: 200,
+  onWarning(warning) {
+    console.warn(`[${warning.code}] ${warning.message}`);
+  },
+});
+```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```js
+const client = new LioranDBClient(uri, {
+  slowRequestThresholdMS: 200,
+  onWarning(warning) {
+    console.warn(`[${warning.code}] ${warning.message}`);
+  },
+});
+```
+
+  </TabItem>
+</Tabs>
+
+Representative output:
+
+<Terminal title="Warning output">
+
+```text
+[SERVER_SLOW] GET /v1/auth/me took longer than expected
+```
+
+</Terminal>
+
+## `LioranDBClient` properties
+
+### `LioranDBClient.version`
+
+Static driver version string.
+
+### `client.options`
+
+Returns the immutable normalized config object.
+
+### `client.connected`
+
+Boolean connection state.
+
+### `client.dbName`
+
+Configured default database name, if any.
+
+### `client.auth`, `client.users`, `client.roles`, `client.cluster`, `client.backups`, `client.settings`
+
+Prebuilt service handles bound to the same client and request pipeline.
+
+## Lifecycle methods
+
+### `connect()`
+
+Behavior from the source:
+
+1. Checks server availability.
+2. If the config includes credentials and an HTTP transport is available, runs login.
+3. If using a data-only path, resolves the data transport.
+4. Marks the client connected.
+
+### `close()`
+
+Behavior from the source:
+
+1. Best-effort logout if configured and authenticated.
+2. Forces active cursors closed.
+3. Cancels outstanding HTTP requests.
+4. Closes the active data transport.
+5. Clears in-memory tokens.
+6. Marks the client closed and disconnected.
+
+### `isConnected()`
+
+Returns whether the client is both connected and not closed.
+
+## Database and discovery methods
+
+### `db(name?)`
+
+Creates a `Db` handle. If no name is passed, the client uses the configured
+default database.
+
+### `listDatabases()`
+
+Performs `GET /v1/databases`.
+
+### `createDatabase(name)`
+
+Sends a create request. Whether the server supports the operation depends on
+the actual server build and deployment shape.
+
+### `dropDatabase(name)`
+
+Sends a drop request. As with creation, runtime support depends on the server.
+
+### `live()`
+
+Unauthenticated `GET /live`.
+
+### `ready()`
+
+Unauthenticated `GET /ready`.
+
+### `serverInfo()`
+
+Unauthenticated `GET /v1`.
+
+Representative output:
+
+```json
+{
+  "service": "liorandb-server",
+  "http_addr": "client.db.example.com:443",
+  "grpc_addr": "client.grpc.example.com:443",
+  "architecture": "split-port REST on 27018, gRPC on 27019",
+  "tls_mode": "proxy-terminated"
+}
+```
+
+## Auth convenience methods
+
+The client forwards these to `auth`:
+
+- `login(username?, password?)`
+- `logout()`
+- `logoutAll()`
+- `me()`
+- `listSessions()`
+- `revokeSession(sessionId)`
+- `changePassword(newPassword, clearMustChange?)`
+
+## Diagnostic hooks
+
+### `setDiagnosticHeaders(headers)`
+
+Adds headers to future transport calls.
+
+### `setResponseObserver(observer)`
+
+Receives transport diagnostics after each completed request.
+
+Example:
+
+<Tabs groupId="code" queryString="code" defaultValue="ts">
+  <TabItem value="ts" label="TypeScript">
+
+```ts
+client.setDiagnosticHeaders({
+  "x-trace-id": "docs-demo-001",
+});
+
+client.setResponseObserver((diagnostics) => {
+  console.log(
+    diagnostics.transport,
+    diagnostics.operation,
+    diagnostics.durationMS,
+    diagnostics.requestId,
+  );
+});
+```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```js
+client.setDiagnosticHeaders({
+  "x-trace-id": "docs-demo-001",
+});
+
+client.setResponseObserver((diagnostics) => {
+  console.log(
+    diagnostics.transport,
+    diagnostics.operation,
+    diagnostics.durationMS,
+    diagnostics.requestId,
+  );
+});
+```
+
+  </TabItem>
+</Tabs>
+
+Representative output:
+
+<Terminal title="Diagnostics">
+
+```text
+http POST 14 req_01K2EXAMPLE
+http POST 8 req_01K2EXAMPLE2
+```
+
+</Terminal>
+
+## Practical gotchas
+
+- `grpc://` configs do not give you HTTP auth or admin routes by themselves.
+- closing the client makes further use invalid and raises `ClientClosedError`.
+- `client.db()` without a configured or passed database name raises `ConfigurationError`.
+- `parseConnectionString()` and object normalization reject invalid TLS/protocol combinations.
+
+## Read next
+
+- [Database, collections, and cursors](/docs/driver/database-and-collections?code=ts)
+- [Auth and admin services](/docs/driver/auth-and-admin?code=ts)
+- [Package exports and reference](/docs/driver/exports-reference?code=ts)

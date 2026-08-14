@@ -1,0 +1,52 @@
+---
+sidebar_position: 1
+slug: /intro
+title: LioranDB Docs
+description: Start with LioranDB v2 pre-alpha, the stable CLI, the stable driver, and the deployment guides.
+---
+
+This docs site is focused on the current LioranDB v2 pre-alpha workflow: run a
+solo Docker node, log in with the bootstrap admin password, rotate it
+immediately, install the stable CLI and driver packages, and build against the
+JavaScript or TypeScript SDK.
+
+## Stable package versions
+
+- Driver: `npm i @liorandb/driver@2.0.3`
+- CLI: `npm i -g @liorandb/cli@1.0.3`
+- Solo image pattern: `liorandb:latest`
+- Managed image pattern in repo templates: `liorandb/liorandb:pre-alpha`
+
+## What is in these docs
+
+- [Solo getting started](/docs/getting-started/solo) walks from Docker startup to the first script.
+- [Driver docs](/docs/driver/overview?code=ts) explain the client, connection strings, CRUD, and collection APIs.
+- [CLI docs](/docs/cli/overview) cover login, password rotation, shell usage, and operational commands.
+- [Deployment docs](/docs/deployment/managed) explain the managed reverse-proxy layout and how it differs from direct local hosting.
+
+## JavaScript and TypeScript tabs
+
+Driver pages use synchronized code tabs. You can:
+
+- click the tabs directly in the page
+- add `?code=js` to prefer JavaScript
+- add `?code=ts` to prefer TypeScript
+
+Examples:
+
+- `/docs/driver/overview?code=js`
+- `/docs/driver/overview?code=ts`
+
+## Recommended path
+
+1. Open [Solo getting started](/docs/getting-started/solo).
+2. Install the CLI and rotate the default admin password.
+3. Install the driver package in your app.
+4. Run the first script in the driver docs.
+5. Read the deployment section before exposing anything publicly.
+
+:::warning Default bootstrap password
+For the local getting-started flow in these docs, the default bootstrap admin
+password is `Q7m!Z2x@L9p#R4vK`. Use it only to log in the first time, then
+replace it immediately with a strong password using `liorandb change-password`.
+:::

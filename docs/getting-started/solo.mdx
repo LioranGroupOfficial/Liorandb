@@ -1,0 +1,350 @@
+---
+sidebar_position: 1
+title: Solo Docker Quickstart
+description: Run a single local LioranDB node, log in as admin, rotate the default password, and run your first app.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Terminal from '@site/src/components/Terminal';
+
+This guide is for a single local LioranDB instance running directly from Docker
+with published ports on your machine.
+
+## What you are setting up
+
+The solo local layout is the simplest shape of LioranDB:
+
+- REST and core API traffic on `27018`
+- gRPC traffic on `27019`
+- metrics on `27201`
+- persistent data in `/var/lib/liorandb/data`
+
+The equivalent Compose shape is:
+
+```yaml
+services:
+  liorandb:
+    image: liorandb/liorandb:pre-alpha
+    container_name: liorandb
+    restart: unless-stopped
+    cpus: 2.0
+    mem_limit: 3.5g
+    ports:
+      - "27018:27018"
+      - "27019:27019"
+      - "27201:27201"
+    volumes:
+      - ./ldb-data:/var/lib/liorandb/data
+    stdin_open: true
+    tty: true
+```
+
+## Start the container
+
+Use the one-line `docker run` command:
+
+<Terminal title="PowerShell or shell">
+
+```bash
+docker run -d --name liorandb -p 27018:27018 -p 27019:27019 -p 27201:27201 -v ldb-data:/var/lib/liorandb/data liorandb:pre-alpha
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Terminal output">
+
+```text
+Unable to find image 'liorandb:pre-alpha' locally
+latest: Pulling from liorandb
+...
+3f4f6d9b4d6c8e0f9d9a8f6f8d6f2e0a7f6f3b9d9c0a1b2c3d4e5f6a7b8c9d0
+```
+
+</Terminal>
+
+:::note Image tag naming
+This guide uses the exact one-line local command you requested with
+`liorandb:latest`. In the managed deployment templates checked into this repo,
+the image reference is `liorandb/liorandb:pre-alpha`.
+:::
+
+## Default admin password
+
+The first local login uses this bootstrap password:
+
+```text
+Q7m!Z2x@L9p#R4vK
+```
+
+Treat it as temporary. The first thing you should do after login is replace it.
+
+## Install the stable CLI
+
+<Terminal title="Install @liorandb/cli@1.0.3">
+
+```bash
+npm i -g @liorandb/cli@1.0.3
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="npm output">
+
+```text
+added 1 package in 3s
+```
+
+</Terminal>
+
+## Log in as admin
+
+<Terminal title="First login">
+
+```bash
+liorandb login admin --password "Q7m!Z2x@L9p#R4vK"
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="CLI output">
+
+```text
+Logged in as admin
+Session stored for profile "default"
+```
+
+</Terminal>
+
+### What this command does
+
+- `liorandb login` starts an authentication flow against the configured server.
+- `admin` is the account name being authenticated.
+- `--password` passes the bootstrap password directly on the command line.
+
+:::warning Safer password handling
+Passing passwords directly in command arguments is convenient for a quickstart,
+but shells and process monitors may retain command arguments. For automation or
+shared machines, prefer `--password-stdin`.
+:::
+
+## Generate a strong replacement password
+
+Before changing the password, generate a new one. Here is a simple Node-based
+generator that works anywhere Node.js is available:
+
+<Terminal title="Generate a password with Node.js">
+
+```bash
+node -e "const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()_+-='; let p=''; for (let i=0;i<24;i++) p+=c[Math.floor(Math.random()*c.length)]; console.log(p)"
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Generated password">
+
+```text
+P9m#K2x!W8q@T4r$Y7n^C3v=
+```
+
+</Terminal>
+
+## Rotate the admin password immediately
+
+Replace the password right after first login:
+
+<Terminal title="Change admin password">
+
+```bash
+liorandb change-password --password "P9m#K2x!W8q@T4r$Y7n^C3v="
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="CLI output">
+
+```text
+Password updated successfully
+```
+
+</Terminal>
+
+### Why this matters
+
+- It removes dependence on the bootstrap secret.
+- It reduces risk if the default password becomes widely known inside a team.
+- It aligns the local operator workflow with what you should already do in
+  hosted or managed environments.
+
+## Install the stable driver
+
+Inside your application project:
+
+<Terminal title="Install @liorandb/driver@2.0.3">
+
+```bash
+npm i @liorandb/driver@2.0.3
+```
+
+</Terminal>
+
+## Your first LioranDB script
+
+The examples below are synchronized. Add `?code=js` or `?code=ts` to the page
+URL to switch the default tab.
+
+<Tabs groupId="code" queryString="code" defaultValue="ts">
+  <TabItem value="ts" label="TypeScript">
+
+```ts
+import {LioranDBClient} from "@liorandb/driver";
+
+type User = {
+  _id?: string;
+  email: string;
+  active: boolean;
+  age: number;
+};
+
+const password = encodeURIComponent("P9m#K2x!W8q@T4r$Y7n^C3v=");
+const uri = `liorandb://admin:${password}@127.0.0.1:27018/default`;
+
+const client = await LioranDBClient.connect(uri);
+
+try {
+  const db = client.db("default");
+  const users = db.collection<User>("users");
+
+  const insertResult = await users.insertOne({
+    email: "ada@example.com",
+    active: true,
+    age: 31,
+  });
+
+  const user = await users.findOne({email: "ada@example.com"});
+  const activeUsers = await users.find({active: true}).limit(10).toArray();
+
+  console.log({
+    insertedId: insertResult.insertedId,
+    user,
+    activeCount: activeUsers.length,
+  });
+} finally {
+  await client.close();
+}
+```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```js
+import {LioranDBClient} from "@liorandb/driver";
+
+const password = encodeURIComponent("P9m#K2x!W8q@T4r$Y7n^C3v=");
+const uri = `liorandb://admin:${password}@127.0.0.1:27018/default`;
+
+const client = await LioranDBClient.connect(uri);
+
+try {
+  const db = client.db("default");
+  const users = db.collection("users");
+
+  const insertResult = await users.insertOne({
+    email: "ada@example.com",
+    active: true,
+    age: 31,
+  });
+
+  const user = await users.findOne({email: "ada@example.com"});
+  const activeUsers = await users.find({active: true}).limit(10).toArray();
+
+  console.log({
+    insertedId: insertResult.insertedId,
+    user,
+    activeCount: activeUsers.length,
+  });
+} finally {
+  await client.close();
+}
+```
+
+  </TabItem>
+</Tabs>
+
+Representative output:
+
+<Terminal title="Application output">
+
+```json
+{
+  "insertedId": "01K2EXAMPLE",
+  "user": {
+    "_id": "01K2EXAMPLE",
+    "email": "ada@example.com",
+    "active": true,
+    "age": 31
+  },
+  "activeCount": 1
+}
+```
+
+</Terminal>
+
+## Script walkthrough
+
+### `encodeURIComponent(...)`
+
+This safely prepares the password for a connection URI. If the password
+contains reserved URI characters such as `@`, `:`, or `/`, encoding prevents
+parsing errors.
+
+### `LioranDBClient.connect(uri)`
+
+This is the high-level connection entry point. It constructs the client, checks
+server availability, and logs in automatically when the URI includes
+credentials.
+
+### `client.db("default")`
+
+This returns a database handle. The handle does not immediately fetch all data.
+It gives you a scoped object used to create collection handles and run
+database-level operations.
+
+### `db.collection("users")`
+
+This returns a collection handle. In TypeScript, `collection<User>("users")`
+adds strong typing to inserted and retrieved document shapes.
+
+### `insertOne(...)`
+
+This inserts one document and returns metadata such as `insertedId`.
+
+### `findOne(...)`
+
+This reads the first matching document or returns `null` if nothing matches.
+
+### `find(...).limit(10).toArray()`
+
+This builds a cursor, limits the result set, and then materializes the results
+into an array.
+
+### `client.close()`
+
+This closes the transport, clears in-memory auth state, and releases resources.
+Always do this when your script is finished.
+
+## What to read next
+
+- [Driver overview](/docs/driver/overview?code=ts)
+- [CLI overview](/docs/cli/overview)
+- [Managed deployment](/docs/deployment/managed)

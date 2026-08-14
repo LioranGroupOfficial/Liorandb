@@ -1,0 +1,160 @@
+---
+sidebar_position: 2
+title: Config and Profiles
+description: How the CLI stores URLs, databases, metrics endpoints, output format, and active profiles.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+The CLI persists profile configuration through `src/config/config-store.ts`.
+
+## Default behavior
+
+When the CLI initializes a fresh state, it creates:
+
+- a profile named `default`
+- URL `liorandb://127.0.0.1:27018`
+- output mode `table`
+
+If you initialize a different profile name first, the CLI creates that profile
+on demand too.
+
+## Initialize config
+
+<Terminal title="Initialize config">
+
+```bash
+liorandb init
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Init output">
+
+```json
+{
+  "initialized": true,
+  "configPath": "/home/you/.config/liorandb-nodejs/cli.json",
+  "profile": "default"
+}
+```
+
+</Terminal>
+
+## Stored profile fields
+
+Each profile can persist these fields:
+
+- `url`
+- `output`
+- `database`
+- `metricsUrl`
+
+That means one profile can target local Docker while another points to a
+managed deployment.
+
+## Set and get profile values
+
+<Terminal title="Persist profile values">
+
+```bash
+liorandb set url liorandb://admin:YOUR_PASSWORD@127.0.0.1:27018/default
+liorandb set output table
+liorandb set db default
+liorandb set metrics-url http://127.0.0.1:27201/metrics
+
+liorandb get url
+liorandb get output
+liorandb get metrics-url
+```
+
+</Terminal>
+
+Important behavior from the source:
+
+- `set url` validates the connection string by calling the driver parser
+- `get url` redacts passwords before printing
+- `set output` only accepts `table`, `json`, `ndjson`, or `quiet`
+- `set db` stores the active database for the selected profile
+- `set metrics-url` is only needed for `metrics --raw`
+
+## URL override versus stored URL
+
+The runtime resolver prefers values in this order:
+
+1. `--url <url>` on the current command
+2. stored profile URL
+
+So this command does not change saved config:
+
+<Terminal title="One-off URL override">
+
+```bash
+liorandb --url liorandb://admin:OTHER_PASSWORD@staging.db.example.com:443/default whoami
+```
+
+</Terminal>
+
+## Profile commands
+
+The profile manager in `src/commands/profile.ts` supports:
+
+- `profile list`
+- `profile create <name>`
+- `profile use <name>`
+- `profile show <name>`
+- `profile delete <name>`
+
+Example:
+
+<Terminal title="Multiple environments">
+
+```bash
+liorandb profile create local
+liorandb profile create managed
+liorandb profile use managed
+liorandb --profile managed set url liorandb://admin:ENCODED_PASSWORD@acme.db.example.com:443/default
+liorandb --profile managed set metrics-url http://liorandb:27201/metrics
+liorandb profile list
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Profile list output">
+
+```text
++---------+---------+---------------------------------------------+----------+--------+------------------------------+
+| profile | current | url                                         | database | output | metrics_url                  |
++---------+---------+---------------------------------------------+----------+--------+------------------------------+
+| local   | false   | liorandb://admin:********@127.0.0.1:27018/  | default  | table  | http://127.0.0.1:27201/...   |
+| managed | true    | liorandb://admin:********@acme.db.example...| default  | table  | http://liorandb:27201/metrics |
++---------+---------+---------------------------------------------+----------+--------+------------------------------+
+```
+
+</Terminal>
+
+## Deleting profiles
+
+The CLI prevents one dangerous case by default:
+
+- you cannot delete the currently selected profile unless you pass `--force`
+- at least one profile must remain
+
+That guard exists directly in the source.
+
+## Full config view
+
+<Terminal title="Show full config">
+
+```bash
+liorandb config --json
+```
+
+</Terminal>
+
+Use this when you want to inspect the resolved local configuration file without
+touching server state.

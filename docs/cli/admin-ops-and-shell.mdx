@@ -1,0 +1,296 @@
+---
+sidebar_position: 5
+title: Admin, Ops, and Shell
+description: User management, roles, settings, diagnostics, backups, and the interactive shell.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+The CLI covers a lot more than login and CRUD. The source includes full admin
+and operational workflows.
+
+## User commands
+
+From `src/commands/user.ts`, the CLI supports:
+
+- `user list`
+- `user show <id-or-username>`
+- `user create <username>`
+- `user update <id>`
+- `user delete <id>`
+- `user reset-password <id>`
+- `user revoke-sessions <id>`
+
+Useful flags:
+
+- `user create --role <role...>`
+- `user create --must-change-password`
+- `user update --enabled`
+- `user update --disabled`
+- `user update --role <role...>`
+- `user update --metadata <json>`
+- `user delete --yes`
+
+Example:
+
+<Terminal title="User management">
+
+```bash
+liorandb user list
+liorandb user create analyst --role read-only --must-change-password
+liorandb user update 01K2USER --enabled --metadata "{\"team\":\"ops\"}"
+liorandb user revoke-sessions 01K2USER
+```
+
+</Terminal>
+
+## Role and permission commands
+
+From `src/commands/role.ts`, the CLI supports:
+
+- `role list`
+- `role show <id>`
+- `role create <name>`
+- `role update <id>`
+- `role delete <id>`
+- `permission list`
+
+Grant strings are parsed in the form:
+
+```text
+Permission@cluster
+Permission@db.collection
+```
+
+Example:
+
+<Terminal title="Roles and permissions">
+
+```bash
+liorandb permission list
+liorandb role create read-users --grant ReadDocuments@default.users
+liorandb role update 01K2ROLE --grant ReadDocuments@default.users WriteDocuments@default.users
+```
+
+</Terminal>
+
+## Settings and CORS
+
+From `src/commands/settings.ts`, the CLI supports:
+
+- `settings show`
+- `settings get <key>`
+- `settings set <key> <value>`
+- `cors list`
+- `cors add <origin>`
+- `cors remove <origin>`
+
+The settings layer has a useful source detail:
+
+- it decodes strings like `true`, `false`, `null`, numbers, objects, and arrays into human-readable values when printing
+- it validates JSON-looking values before sending them back
+
+<Terminal title="Settings and CORS">
+
+```bash
+liorandb settings show
+liorandb settings get max_connections
+liorandb settings set max_connections 500
+liorandb cors add https://app.example.com
+liorandb cors list
+```
+
+</Terminal>
+
+## Status, doctor, metrics, and stats
+
+From `src/commands/ops.ts`, the main operations commands are:
+
+- `status`
+- `health`
+- `doctor`
+- `metrics`
+- `stats`
+
+Example:
+
+<Terminal title="Diagnostics">
+
+```bash
+liorandb status
+liorandb doctor
+liorandb metrics
+liorandb metrics --raw --metrics-url http://127.0.0.1:27201/metrics
+liorandb stats
+```
+
+</Terminal>
+
+Source-backed behavior worth knowing:
+
+- `status` combines unauthenticated liveness/readiness checks with authenticated cluster APIs
+- `doctor` runs lightweight checks for configuration, DNS, HTTP reachability, readiness, authentication, gRPC discovery, and cluster health
+- `metrics` without `--raw` derives a summary from authenticated APIs
+- `metrics --raw` fetches a literal metrics endpoint and requires either `--metrics-url`, a stored profile `metricsUrl`, or `LIORANDB_METRICS_URL`
+- `status` and `metrics` both support `--watch` and `--interval <seconds>`
+
+## Cluster commands
+
+The cluster subgroup supports:
+
+- `cluster status`
+- `cluster nodes`
+- `cluster partitions`
+- `cluster health`
+- `cluster checkpoint`
+- `cluster compact`
+
+The source protects mutating cluster operations with confirmation prompts unless
+`--yes` is passed.
+
+<Terminal title="Cluster operations">
+
+```bash
+liorandb cluster status
+liorandb cluster nodes
+liorandb cluster partitions
+liorandb cluster checkpoint --yes
+liorandb cluster compact --yes
+```
+
+</Terminal>
+
+## Backup commands
+
+From `src/commands/backup.ts`, the CLI supports:
+
+- `backup list`
+- `backup create`
+- `backup show <id>`
+- `backup verify <id>`
+- `backup delete <id>`
+- `backup restore <id>`
+
+Important safety behaviors in the source:
+
+- `backup delete` prompts for confirmation unless `--yes`
+- `backup restore` requires typing `RESTORE <backup-id>` unless `--yes`
+- `backup restore` also supports `--disable-safety-backup`
+- `backup create --scope` only accepts `cluster` or `local_node`
+
+Example:
+
+<Terminal title="Backups">
+
+```bash
+liorandb backup list
+liorandb backup create --label nightly --scope cluster
+liorandb backup show 01K2BACKUP
+liorandb backup verify 01K2BACKUP
+liorandb backup restore 01K2BACKUP
+```
+
+</Terminal>
+
+## Interactive shell
+
+The shell implementation in `src/shell/repl.ts` and `src/shell/parser.ts`
+is one of the most detailed parts of the CLI.
+
+Start it with:
+
+<Terminal title="Start shell">
+
+```bash
+liorandb shell
+```
+
+</Terminal>
+
+### What the shell supports
+
+- profile-aware prompt with current database
+- persistent history
+- tab completion for meta commands, databases, collections, and `db.<collection>.<operation>`
+- multiline input
+- safe JSON-like parsing instead of arbitrary JavaScript execution
+- in-shell login and logout
+
+### Meta commands
+
+The parser exposes these dot-commands:
+
+- `.help`
+- `.exit`
+- `.quit`
+- `.status`
+- `.whoami`
+- `.databases`
+- `.use <database>`
+- `.db.create <database>`
+- `.db.drop <database>`
+- `.db.current`
+- `.collections`
+- `.collection.create <name>`
+- `.collection.drop <name>`
+- `.collection.list`
+- `.users`
+- `.roles`
+- `.permissions`
+- `.metrics`
+- `.stats`
+- `.clear`
+- `.history`
+- `.login`
+- `.logout`
+
+### Data expressions
+
+The shell supports:
+
+- `db.users.find(filter?, options?)`
+- `db.users.findOne(filter?, options?)`
+- `db.users.insertOne(document)`
+- `db.users.insertMany([documents])`
+- `db.users.updateOne(filter, update, options?)`
+- `db.users.updateMany(filter, update, options?)`
+- `db.users.deleteOne(filter)`
+- `db.users.deleteMany(filter)`
+- `db.users.aggregate(pipeline)`
+
+Example session:
+
+<Terminal title="Shell example">
+
+```text
+liorandb [default]> db.users.insertOne({name:'Ada', active:true})
+{
+  "inserted_id": "01K2EXAMPLE"
+}
+
+7ms
+
+liorandb [default]> db.users.find({active:true}, {limit: 10})
++------+--------+
+| name | active |
++------+--------+
+| Ada  | true   |
++------+--------+
+
+1 document
+4ms
+```
+
+</Terminal>
+
+### JSON-like parser rules
+
+The shell parser accepts:
+
+- strict JSON
+- single-quoted strings
+- unquoted simple object keys
+- multiline arrays and objects
+
+It does not evaluate arbitrary JavaScript. That is a deliberate safety
+decision in the source.

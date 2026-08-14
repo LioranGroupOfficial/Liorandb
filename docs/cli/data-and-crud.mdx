@@ -1,0 +1,217 @@
+---
+sidebar_position: 4
+title: Data and CRUD
+description: Database, collection, query, insert, update, delete, and aggregate commands from the real CLI source.
+---
+
+import Terminal from '@site/src/components/Terminal';
+
+The CLI exposes both structural commands and direct CRUD commands.
+
+## Database commands
+
+From `src/commands/db.ts`, the database command group is:
+
+- `db list`
+- `db create <name>`
+- `db drop <name>`
+- `db use <name>`
+- `db current`
+
+Example:
+
+<Terminal title="Database workflow">
+
+```bash
+liorandb db list
+liorandb db create app
+liorandb db use app
+liorandb db current
+```
+
+</Terminal>
+
+Important source behavior:
+
+- `db use` persists the selected database into the current profile
+- `db drop` prompts for confirmation unless `--yes` is passed
+- if you drop the profile's active database, the CLI clears that stored `database` field
+
+## Collection commands
+
+From `src/commands/collection.ts`, the collection group is:
+
+- `collection list`
+- `collection create <name>`
+- `collection drop <name>`
+
+You can override the active database with `--db <database>`.
+
+<Terminal title="Collection workflow">
+
+```bash
+liorandb collection list
+liorandb collection create users
+liorandb collection drop old-users --yes
+```
+
+</Terminal>
+
+## JSON input styles
+
+CRUD commands use helpers from `src/utils/input.ts` and accept JSON from:
+
+- inline `--json`
+- `--file <path>`
+- `--stdin`
+- `--ndjson <path>` for `insert-many`
+
+That makes the CLI usable both for one-off commands and scripted pipelines.
+
+## Insert commands
+
+<Terminal title="Insert commands">
+
+```bash
+liorandb insert-one users --json "{\"name\":\"Ada\",\"active\":true}"
+liorandb insert-many users --file ./users.json
+liorandb insert-many users --ndjson ./users.ndjson
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Insert output">
+
+```json
+{
+  "database": "default",
+  "collection": "users",
+  "inserted_id": "01K2EXAMPLE"
+}
+```
+
+</Terminal>
+
+## Find commands
+
+The source supports:
+
+- `find <collection>`
+- `find-one <collection>`
+
+Shared query flags:
+
+- `--db <database>`
+- `--filter <json>`
+- `--filter-file <path>`
+- `--stdin`
+- `--limit <number>`
+- `--skip <number>`
+- `--sort <json>`
+- `--projection <json>`
+
+Example:
+
+<Terminal title="Find commands">
+
+```bash
+liorandb find users --filter "{\"active\":true}" --sort "{\"name\":1}" --limit 20
+liorandb find-one users --filter "{\"email\":\"ada@example.com\"}"
+```
+
+</Terminal>
+
+Behavior worth knowing:
+
+- `find` streams one record per line when output mode is `ndjson`
+- in table mode, `find` materializes records and prints them as rows
+- `find-one` prints `"No document matched."` in human mode when nothing is found
+
+## Update commands
+
+The source registers:
+
+- `update-one <collection>`
+- `update-many <collection>`
+
+Extra update flags:
+
+- `--update <json>`
+- `--update-file <path>`
+- `--upsert`
+
+<Terminal title="Update examples">
+
+```bash
+liorandb update-one users --filter "{\"email\":\"ada@example.com\"}" --update "{\"$set\":{\"active\":false}}"
+liorandb update-many users --filter "{\"active\":false}" --update "{\"$set\":{\"flagged\":true}}" --upsert
+```
+
+</Terminal>
+
+Representative output:
+
+<Terminal title="Update output">
+
+```json
+{
+  "database": "default",
+  "collection": "users",
+  "matched_count": 1,
+  "modified_count": 1,
+  "upserted_id": null
+}
+```
+
+</Terminal>
+
+## Delete commands
+
+The CLI registers:
+
+- `delete-one <collection>`
+- `delete-many <collection>`
+
+There is one especially important safety guard in the source:
+
+- `delete-many` asks for an exact collection-name confirmation when the filter matches everything, unless `--yes` is passed
+
+<Terminal title="Delete examples">
+
+```bash
+liorandb delete-one users --filter "{\"email\":\"ada@example.com\"}"
+liorandb delete-many users --filter "{}"
+liorandb delete-many users --filter "{}" --yes
+```
+
+</Terminal>
+
+## Aggregation
+
+The aggregate command expects a JSON array pipeline:
+
+<Terminal title="Aggregate">
+
+```bash
+liorandb aggregate users --json "[{\"$match\":{\"active\":true}},{\"$sort\":{\"name\":1}}]"
+```
+
+</Terminal>
+
+If the provided pipeline is not an array, the command throws a CLI error.
+
+## Human and machine output
+
+These same CRUD commands can be shaped for shell automation:
+
+<Terminal title="Automation-friendly output">
+
+```bash
+liorandb find users --filter "{\"active\":true}" --output ndjson
+liorandb find users --filter "{\"active\":true}" --json
+liorandb insert-one users --json "{\"name\":\"Lin\"}" --quiet
+```
+
+</Terminal>
