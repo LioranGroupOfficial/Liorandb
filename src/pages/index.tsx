@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import {Activity, BookOpenText, Gauge, ServerCog} from 'lucide-react';
@@ -7,6 +8,8 @@ import {Activity, BookOpenText, Gauge, ServerCog} from 'lucide-react';
 import styles from './index.module.css';
 
 export default function Home(): ReactNode {
+  const logoUrl = useBaseUrl('/img/liorandb.png');
+
   return (
     <Layout
       title="LioranDB Docs"
@@ -14,6 +17,11 @@ export default function Home(): ReactNode {
       <main className={styles.page}>
         <section className={styles.hero}>
           <div className={styles.copy}>
+            <img
+              className={styles.heroLogo}
+              src={logoUrl}
+              alt="LioranDB logo"
+            />
             <p className={styles.eyebrow}>LioranDB v2 pre-alpha</p>
             <Heading as="h1" className={styles.title}>
               Run it locally.

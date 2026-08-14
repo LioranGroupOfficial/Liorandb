@@ -18,6 +18,14 @@
   max-width: 860px;
 }
 
+.heroLogo {
+  display: block;
+  width: min(180px, 36vw);
+  height: auto;
+  margin: 0 0 1.15rem;
+  object-fit: contain;
+}
+
 .eyebrow {
   margin: 0 0 0.9rem;
   color: #8a8d91;
@@ -329,6 +337,10 @@
 
   .title {
     font-size: 2.6rem;
+  }
+
+  .heroLogo {
+    width: min(148px, 42vw);
   }
 
   .commandText,

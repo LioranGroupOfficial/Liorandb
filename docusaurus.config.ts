@@ -35,7 +35,7 @@ const config: Config = {
     ],
   ],
   themeConfig: {
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/liorandb-social-card.jpg',
     colorMode: {
       defaultMode: 'dark',
       disableSwitch: true,
@@ -45,7 +45,7 @@ const config: Config = {
       title: 'LioranDB',
       logo: {
         alt: 'LioranDB Logo',
-        src: 'img/logo.svg',
+        src: 'img/liorandb.png',
       },
       items: [
         {to: '/docs/getting-started/solo', label: 'Docs', position: 'left'},
@@ -58,6 +58,13 @@ const config: Config = {
     },
     footer: {
       style: 'light',
+      logo: {
+        alt: 'LioranDB Logo',
+        src: 'img/liorandb.png',
+        href: '/',
+        width: 72,
+        height: 72,
+      },
       links: [
         {
           title: 'Docs',
