@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Driver Overview
-description: Deep overview of @liorandb/driver@2.0.3 and its public API surface.
+description: Deep overview of @liorandb/driver@2.0.4 and its public API surface.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -12,12 +12,22 @@ This section is written from the real package source in
 `C:\pro_projects\Liorandb-Rust\sdks\ldb-driver\ts-js\src`, not just from a
 marketing README.
 
+The examples on these driver pages are also aligned with the repository's
+docs smoke test at
+`C:\pro_projects\Liorandb-Rust\sdks\ldb-driver\ts-js\scripts\test-all.mjs`.
+That script currently exercises:
+
+- connection parsing and client lifecycle
+- database and collection creation/drop flows
+- CRUD, `countDocuments()`, indexes, `$text` queries, cursors, and aggregation
+- auth, users, roles, cluster, settings, and backups admin services
+
 The stable package documented here is:
 
-<Terminal title="Install @liorandb/driver@2.0.3">
+<Terminal title="Install @liorandb/driver@2.0.4">
 
 ```bash
-npm i @liorandb/driver@2.0.3
+npm i @liorandb/driver@2.0.4
 ```
 
 </Terminal>
@@ -25,7 +35,7 @@ npm i @liorandb/driver@2.0.3
 ## Node.js and package basics
 
 - Package name: `@liorandb/driver`
-- Current documented npm version: `2.0.3`
+- Current documented npm version: `2.0.4`
 - Runtime module format: ESM
 - Node.js requirement: `18+`
 - Native `fetch` is expected by the HTTP transport
@@ -94,6 +104,11 @@ This is the main application handle for document work. It exposes:
 - `insertMany()`
 - `find()`
 - `findOne()`
+- `countDocuments()`
+- `createIndex()`
+- `createTextIndex()`
+- `listIndexes()`
+- `dropIndex()`
 - `findManyByIds()`
 - `updateOne()`
 - `updateMany()`
@@ -101,6 +116,15 @@ This is the main application handle for document work. It exposes:
 - `deleteMany()`
 - `aggregate()`
 - `drop()`
+
+The docs test currently verifies all of the following against a live server:
+
+- secondary index creation with `createIndex()`
+- text index creation with `createTextIndex()`
+- index-aware range queries such as `{docNumber: {$gte: 4}}`
+- text-index-backed `$text` queries
+- `countDocuments()` with and without filters
+- index deletion with `dropIndex()`
 
 ### `FindCursor<TSchema>`
 
@@ -154,7 +178,14 @@ try {
     age: 18,
   });
 
+  await users.createIndex("age");
+  await users.createTextIndex("email");
+
   const found = await users.findOne({email: "user@example.com"});
+  const activeCount = await users.countDocuments({active: true});
+  const textMatches = await users.find({
+    $text: {$search: "user", $field: "email"},
+  }).toArray();
 
   const activeUsers = await users
     .find({active: true})
@@ -165,7 +196,9 @@ try {
   console.log({
     insertedId: inserted.insertedId,
     found,
-    count: activeUsers.length,
+    activeCount,
+    textMatches: textMatches.length,
+    pageCount: activeUsers.length,
   });
 } finally {
   await client.close();
@@ -192,7 +225,14 @@ try {
     age: 18,
   });
 
+  await users.createIndex("age");
+  await users.createTextIndex("email");
+
   const found = await users.findOne({email: "user@example.com"});
+  const activeCount = await users.countDocuments({active: true});
+  const textMatches = await users.find({
+    $text: {$search: "user", $field: "email"},
+  }).toArray();
 
   const activeUsers = await users
     .find({active: true})
@@ -203,7 +243,9 @@ try {
   console.log({
     insertedId: inserted.insertedId,
     found,
-    count: activeUsers.length,
+    activeCount,
+    textMatches: textMatches.length,
+    pageCount: activeUsers.length,
   });
 } finally {
   await client.close();
@@ -226,7 +268,8 @@ Representative output:
     "active": true,
     "age": 18
   },
-  "count": 1
+  "activeCount": 1,
+  "pageCount": 1
 }
 ```
 
@@ -241,8 +284,9 @@ Representative output:
 5. `db.collection<User>("users")` creates a typed `Collection<User>`.
 6. `insertOne()` serializes the document and delegates to the active data transport.
 7. `findOne()` issues a one-shot read request.
-8. `find(...).sort(...).limit(...).toArray()` creates a `FindCursor`, applies query options, fetches pages, and materializes the final result.
-9. `close()` logs out when configured, closes active transports, and closes active cursors.
+8. `countDocuments()` runs a server-side count for the matching filter.
+9. `find(...).sort(...).limit(...).toArray()` creates a `FindCursor`, applies query options, fetches pages, and materializes the final result.
+10. `close()` logs out when configured, closes active transports, and closes active cursors.
 
 ## Supported connection schemes
 

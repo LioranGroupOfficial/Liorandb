@@ -58,13 +58,6 @@ const config: Config = {
     },
     footer: {
       style: 'light',
-      logo: {
-        alt: 'LioranDB Logo',
-        src: 'img/liorandb.png',
-        href: '/',
-        width: 72,
-        height: 72,
-      },
       links: [
         {
           title: 'Docs',

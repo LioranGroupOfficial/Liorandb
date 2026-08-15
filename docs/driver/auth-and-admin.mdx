@@ -1,15 +1,25 @@
 ---
 sidebar_position: 4
 title: Auth and Admin Services
-description: Detailed docs for AuthService, UsersService, RolesService, ClusterService, BackupsService, and SettingsService.
+description: Detailed docs for AuthService, UsersService, RolesService, ClusterService, BackupsService, and SettingsService from the real driver source.
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Terminal from '@site/src/components/Terminal';
 
-The client exposes six service handles that are created in the
-`LioranDBClient` constructor:
+This page is based on the real exported admin/auth types and services in:
+
+- `sdks/ldb-driver/ts-js/src/services/*.ts`
+- `sdks/ldb-driver/ts-js/src/types/admin.ts`
+- `sdks/ldb-driver/ts-js/src/auth/types.ts`
+
+The behavior notes are also aligned with the live docs test at
+`sdks/ldb-driver/ts-js/scripts/test-all.mjs`.
+
+## Service handles on `LioranDBClient`
+
+The client exposes:
 
 - `client.auth`
 - `client.users`
@@ -18,11 +28,11 @@ The client exposes six service handles that are created in the
 - `client.backups`
 - `client.settings`
 
-These are thin, source-backed wrappers over the server HTTP API.
+These are source-backed wrappers over the server HTTP API.
 
 ## `AuthService`
 
-Public methods from the source:
+Public methods:
 
 - `login(username, password)`
 - `refresh(refreshToken)`
@@ -35,61 +45,42 @@ Public methods from the source:
 
 ### `login(username, password)`
 
-Authenticates and stores returned tokens in memory through the client’s
-`TokenManager`.
-
-Example:
-
-<Terminal title="Auth example">
-
-```bash
-liorandb login admin --password "your-password"
-```
-
-</Terminal>
-
-Equivalent driver example:
-
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
+Authenticates with explicit credentials and stores tokens inside the client.
 
 ```ts
 const login = await client.auth.login("admin", "your-password");
-console.log(login.principal.username, login.session.session_id);
+
+console.log(login.principal.username);
+console.log(login.session.session_id);
+console.log(login.accessToken.length > 0);
+console.log(login.refreshToken.length > 0);
 ```
-
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
-
-```js
-const login = await client.auth.login("admin", "your-password");
-console.log(login.principal.username, login.session.session_id);
-```
-
-  </TabItem>
-</Tabs>
-
-Representative output:
-
-<Terminal title="login() output">
-
-```text
-admin sess_01K2EXAMPLE
-```
-
-</Terminal>
 
 ### `refresh(refreshToken)`
 
 Exchanges a refresh token for a fresh token pair.
 
+```ts
+const refreshed = await client.auth.refresh(previousRefreshToken);
+console.log(refreshed.accessToken, refreshed.refreshToken);
+```
+
 ### `logout()`
 
-Revokes the current session and clears in-memory authentication state.
+Revokes the current session.
+
+The docs test exercises this through both:
+
+- `client.auth.logout()`
+- `client.logout()`
 
 ### `logoutAll()`
 
-Revokes every session for the current user.
+Revokes all sessions for the current user.
+
+The docs test also exercises the convenience alias:
+
+- `client.logoutAll()`
 
 ### `me()`
 
@@ -97,15 +88,17 @@ Returns the current authenticated principal.
 
 ### `listSessions()`
 
-Returns readonly session views.
+Returns the current user's active sessions.
 
 ### `revokeSession(sessionId)`
 
 Revokes one session by id.
 
+The docs test creates an extra session specifically to verify this behavior.
+
 ### `changePassword(newPassword, clearMustChange?)`
 
-Changes the current user’s password.
+Changes the current user's password.
 
 ## `UsersService`
 
@@ -119,9 +112,9 @@ Public methods:
 - `resetPassword(userId, input)`
 - `revokeSessions(userId)`
 
-### `create(input)`
+### `CreateUserInput`
 
-The input type is `CreateUserInput`:
+The real exported type is:
 
 ```ts
 interface CreateUserInput {
@@ -132,48 +125,66 @@ interface CreateUserInput {
 }
 ```
 
-Example:
+### `create(input)`
 
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
+Creates a user record.
 
 ```ts
 const user = await client.users.create({
   username: "ops-user",
   password: "SuperStrongPassword123!",
-  roles: ["admin"],
-  must_change_password: true,
+  roles: ["read_only"],
+  must_change_password: false,
 });
-
-console.log(user.id, user.username, user.enabled);
 ```
 
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
+### `list()`
 
-```js
-const user = await client.users.create({
-  username: "ops-user",
-  password: "SuperStrongPassword123!",
-  roles: ["admin"],
-  must_change_password: true,
+Returns a readonly array of `UserRecord`.
+
+### `get(userId)`
+
+Fetches one user by id.
+
+### `update(userId, input)`
+
+The real exported update type is:
+
+```ts
+interface UpdateUserInput {
+  readonly enabled?: boolean;
+  readonly roles?: readonly string[];
+  readonly metadata?: Readonly<Record<string, string>>;
+}
+```
+
+Example:
+
+```ts
+await client.users.update(user.id, {
+  enabled: true,
+  metadata: {suite: "docs-test"},
 });
-
-console.log(user.id, user.username, user.enabled);
 ```
 
-  </TabItem>
-</Tabs>
+### `resetPassword(userId, input)`
 
-Representative output:
+The real exported type is:
 
-<Terminal title="users.create() output">
-
-```text
-user:ops-user ops-user true
+```ts
+interface ResetUserPasswordInput {
+  readonly new_password: string;
+  readonly clear_must_change?: boolean;
+}
 ```
 
-</Terminal>
+### `revokeSessions(userId)`
+
+Revokes all sessions for the target user.
+
+### `delete(userId)`
+
+Deletes the user.
 
 ## `RolesService`
 
@@ -186,23 +197,80 @@ Public methods:
 - `updateRole(roleId, input)`
 - `deleteRole(roleId)`
 
+### Permission names
+
+The real exported `PermissionName` union includes:
+
+- `DatabaseList`
+- `DatabaseCreate`
+- `DatabaseDrop`
+- `CollectionList`
+- `CollectionCreate`
+- `CollectionDrop`
+- `DocumentRead`
+- `DocumentInsert`
+- `DocumentUpdate`
+- `DocumentDelete`
+- `IndexList`
+- `IndexCreate`
+- `IndexDrop`
+- `QueryExecute`
+- `QueryExplain`
+- `TransactionExecute`
+- `BackupList`
+- `BackupCreate`
+- `BackupDelete`
+- `BackupRestore`
+- `UserList`
+- `UserCreate`
+- `UserUpdate`
+- `UserDelete`
+- `UserRotateCredentials`
+- `SettingsRead`
+- `SettingsWrite`
+- `ClusterRead`
+- `ClusterManage`
+- `MetricsRead`
+- `AuditRead`
+- `SessionList`
+- `SessionRevoke`
+- `SystemNamespaceAccess`
+
+### Grant scopes
+
+The real exported `RoleGrantScope` type is:
+
+```ts
+type RoleGrantScope =
+  | { readonly kind: "cluster" }
+  | { readonly kind: "database"; readonly database: string }
+  | {
+      readonly kind: "collection";
+      readonly database: string;
+      readonly collection: string;
+    };
+```
+
+### `CreateRoleInput`
+
+```ts
+interface CreateRoleInput {
+  readonly name: string;
+  readonly grants: readonly PermissionGrant[];
+}
+```
+
 ### `listPermissions()`
 
-Returns the permission names advertised by the server.
+Returns the permission names the server currently advertises.
+
+### `listRoles()`
+
+Returns a readonly array of `RoleRecord`.
 
 ### `createRole(input)`
 
-`CreateRoleInput` uses `PermissionGrant[]`, and each grant has:
-
-- `permission`
-- `scope`
-
-The source supports cluster, database, and collection scopes.
-
 Example:
-
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
 
 ```ts
 const role = await client.roles.createRole({
@@ -214,39 +282,35 @@ const role = await client.roles.createRole({
     },
   ],
 });
-
-console.log(role.name, role.grants.length);
 ```
 
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
+### `getRole(roleId)`
 
-```js
-const role = await client.roles.createRole({
-  name: "readers",
-  grants: [
-    {
-      permission: "DocumentRead",
-      scope: {kind: "database", database: "default"},
-    },
-  ],
-});
+Current tested practical behavior:
 
-console.log(role.name, role.grants.length);
+- using the role `name` is the safest follow-up lookup
+
+### `updateRole(roleId, input)`
+
+The real update shape is:
+
+```ts
+interface UpdateRoleInput {
+  readonly grants: readonly PermissionGrant[];
+}
 ```
 
-  </TabItem>
-</Tabs>
+Current tested practical guidance:
 
-Representative output:
+- reuse your own original driver-shaped grants when updating
+- do not assume every server role response can be round-tripped blindly back
+  into `updateRole()`
 
-<Terminal title="roles.createRole() output">
+### `deleteRole(roleId)`
 
-```text
-readers 1
-```
+Current tested practical behavior:
 
-</Terminal>
+- deleting by role `name` is the most reliable path
 
 ## `ClusterService`
 
@@ -262,62 +326,53 @@ Public methods:
 
 ### `summary()`
 
-Returns cluster summary data.
+Returns `ClusterSummary`:
+
+```ts
+interface ClusterSummary {
+  readonly node_id: number;
+  readonly state: string;
+  readonly nodes: readonly NodeConfigView[];
+  readonly partitions: number;
+  readonly protocol_version: number;
+}
+```
 
 ### `nodes()`
 
-Returns readonly node config views.
+Returns readonly `NodeConfigView[]`.
 
 ### `partitions()`
 
-Returns readonly partition placement views.
+Returns readonly partition placement rows.
 
 ### `health()`
 
-Returns readonly partition health snapshots.
+Returns readonly `PartitionHealthView[]`.
 
 ### `readiness()`
 
-Returns the current readiness state and its transitions.
+Returns current readiness plus transitions.
 
 ### `checkpoint()`
 
-Triggers a checkpoint operation.
+Triggers cluster checkpoint maintenance and returns an acknowledgment object.
+
+Current practical interpretation:
+
+- this is an admin trigger
+- treat success as "request accepted"
+- do not assume it means every internal durability task has fully drained before
+  the response is returned
 
 ### `compact()`
 
-Triggers compaction.
+Triggers compaction maintenance and returns an acknowledgment object.
 
-Example:
+Current practical interpretation:
 
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
-
-```ts
-const summary = await client.cluster.summary();
-console.log(summary.node_id, summary.partitions, summary.state);
-```
-
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
-
-```js
-const summary = await client.cluster.summary();
-console.log(summary.node_id, summary.partitions, summary.state);
-```
-
-  </TabItem>
-</Tabs>
-
-Representative output:
-
-<Terminal title="cluster.summary() output">
-
-```text
-1 128 Ready
-```
-
-</Terminal>
+- this is also an admin trigger
+- treat the response as acknowledgment rather than as a detailed compaction report
 
 ## `BackupsService`
 
@@ -331,9 +386,9 @@ Public methods:
 - `restore(backupId, input)`
 - `getRestoreJob(jobId)`
 
-### `create(input?)`
+### `BackupCreateInput`
 
-Accepts:
+The real exported type is:
 
 ```ts
 interface BackupCreateInput {
@@ -342,9 +397,69 @@ interface BackupCreateInput {
 }
 ```
 
-### `restore(backupId, input)`
+### `list()`
 
-Accepts:
+Returns readonly `BackupJobRecord[]`.
+
+### `create(input?)`
+
+Creates a backup job and returns a `BackupJobRecord`.
+
+Current docs-test-backed behavior:
+
+- `create()` returns a backup id immediately
+- production code should still poll `get(backupId)` until `status` becomes
+  `"completed"` before assuming the archive exists
+
+```ts
+const backup = await client.backups.create({
+  label: "docs-demo",
+  scope: "local_node",
+});
+```
+
+### `get(backupId)`
+
+Returns the current `BackupJobRecord`.
+
+The real record includes:
+
+- `backup_id`
+- `label`
+- `backup_type`
+- `status`
+- `requested_by`
+- `created_at_ms`
+- `started_at_ms`
+- `completed_at_ms`
+- `failed_at_ms`
+- `error`
+- `archive_path`
+- `manifest_path`
+- `size_bytes`
+- `checksum_sha256`
+- `partition_snapshot_boundary`
+- `topology_toml`
+- `engine_version`
+- `database_metadata`
+- `cluster_complete`
+- `scope`
+
+### `verify(backupId)`
+
+Verifies the created archive and returns the updated `BackupJobRecord`.
+
+The docs test now waits for completion first and then calls `verify()`.
+
+### `delete(backupId)`
+
+Deletes the archive and removes the stored backup job record.
+
+The docs test now uses this to clean up backup files after exercising the API.
+
+### `RestoreInput`
+
+The real exported type is:
 
 ```ts
 interface RestoreInput {
@@ -352,6 +467,52 @@ interface RestoreInput {
   readonly disable_safety_backup?: boolean;
 }
 ```
+
+### `restore(backupId, input)`
+
+Schedules a restore and returns:
+
+```ts
+interface RestoreResponse {
+  readonly job: RestoreJobRecord;
+  readonly restart_required: boolean;
+}
+```
+
+Current tested practical behavior:
+
+- restore is a scheduled maintenance operation
+- the server responds with `restart_required: true`
+- follow-up state can be checked with `getRestoreJob(jobId)`
+
+Example:
+
+```ts
+const restore = await client.backups.restore(backup.backup_id, {
+  confirmation: `RESTORE ${backup.backup_id}`,
+  disable_safety_backup: true,
+});
+```
+
+### `getRestoreJob(jobId)`
+
+Returns the scheduled restore job record.
+
+The real exported restore record includes:
+
+- `job_id`
+- `backup_id`
+- `requested_by`
+- `confirmation`
+- `status`
+- `created_at_ms`
+- `started_at_ms`
+- `completed_at_ms`
+- `failure`
+- `staging_paths`
+- `safety_backup_id`
+- `validation_results`
+- `per_node_progress`
 
 ## `SettingsService`
 
@@ -370,7 +531,7 @@ Public methods:
 
 ### `get()`
 
-Returns the redacted generic settings map.
+Returns the generic redacted settings map.
 
 ### `update(values)`
 
@@ -378,36 +539,63 @@ Patches the generic settings map.
 
 ### `getCors()` and `updateCors(settings)`
 
-Read and replace CORS settings.
+Read and replace `CorsSettings`.
 
 ### `getPerformance()` and `updatePerformance(settings)`
 
-Read and replace performance controller settings.
+Read and replace `PerformanceSettings`.
+
+Real exported performance fields include:
+
+- `controller_interval_ms`
+- `query_parallelism_cap`
+- `result_batch_size`
+- `compaction_permits`
+- `checkpoint_permits`
+- `replication_batch_size`
+- `backup_compression_concurrency`
+- `index_warming_enabled`
+- `background_work_enabled`
+- `high_watermark_percent`
+- `critical_watermark_percent`
+- `emergency_reserve_percent`
 
 ### `getLimits()` and `updateLimits(settings)`
 
-Read and replace admission/quota settings.
+Read and replace `LimitSettings`.
 
 ### `getBackups()` and `updateBackups(settings)`
 
-Read and replace backup scheduling and retention settings.
+Read and replace `BackupSettings`.
 
-## Important note on response shapes
+Real exported backup settings include:
 
-These services return the source-defined admin types, including:
+- `compression_level`
+- `verify_after_create`
+- `require_cluster_complete`
+- `hourly`
+- `daily`
+- `weekly`
+- `monthly`
+- `retention`
 
-- `UserRecord`
-- `RoleRecord`
-- `ClusterSummary`
-- `BackupJobRecord`
-- `RestoreJobRecord`
-- `CorsSettings`
-- `PerformanceSettings`
-- `LimitSettings`
-- `BackupSettings`
+## Practical pattern: admin smoke test flow
 
-Those interfaces are exported by the package and documented further in the
-reference page.
+The repository docs test currently exercises this rough flow:
+
+1. connect and authenticate
+2. create temp users and roles
+3. hit cluster summary, health, readiness, checkpoint, and compact
+4. read and round-trip settings
+5. create backup
+6. poll backup completion
+7. verify backup
+8. schedule restore
+9. inspect restore job
+10. delete backup artifacts during cleanup
+
+That means the examples on this page are not just theoretical; they match the
+real end-to-end test coverage in the repository.
 
 ## Read next
 

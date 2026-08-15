@@ -17,12 +17,14 @@ export default function Home(): ReactNode {
       <main className={styles.page}>
         <section className={styles.hero}>
           <div className={styles.copy}>
-            <img
-              className={styles.heroLogo}
-              src={logoUrl}
-              alt="LioranDB logo"
-            />
-            <p className={styles.eyebrow}>LioranDB v2 pre-alpha</p>
+            <div className={styles.brandLockup}>
+              <img
+                className={styles.heroLogo}
+                src={logoUrl}
+                alt="LioranDB logo"
+              />
+              <p className={styles.eyebrow}>LioranDB v2 pre-alpha</p>
+            </div>
             <Heading as="h1" className={styles.title}>
               Run it locally.
             </Heading>

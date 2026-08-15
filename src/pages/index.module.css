@@ -18,21 +18,28 @@
   max-width: 860px;
 }
 
+.brandLockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.95rem;
+  margin: 0 0 1rem;
+}
+
 .heroLogo {
   display: block;
-  width: min(180px, 36vw);
+  width: min(72px, 16vw);
   height: auto;
-  margin: 0 0 1.15rem;
   object-fit: contain;
 }
 
 .eyebrow {
-  margin: 0 0 0.9rem;
+  margin: 0;
   color: #8a8d91;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .title {
@@ -340,7 +347,11 @@
   }
 
   .heroLogo {
-    width: min(148px, 42vw);
+    width: min(64px, 20vw);
+  }
+
+  .brandLockup {
+    gap: 0.7rem;
   }
 
   .commandText,

@@ -1,14 +1,23 @@
 ---
 sidebar_position: 3
 title: Database, Collections, and Cursors
-description: Detailed docs for Db, Collection<T>, FindCursor, and AggregationCursor.
+description: Detailed docs for Db, Collection<T>, FindCursor, and AggregationCursor based on the real driver source.
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Terminal from '@site/src/components/Terminal';
 
-This page documents the main application-layer handles:
+This page is based on the real driver source in:
+
+- `sdks/ldb-driver/ts-js/src/types/database.ts`
+- `sdks/ldb-driver/ts-js/src/collection.ts`
+- `sdks/ldb-driver/ts-js/src/cursor.ts`
+
+The examples are also aligned with the live docs smoke test in
+`sdks/ldb-driver/ts-js/scripts/test-all.mjs`.
+
+## Handles on this page
 
 - `Db`
 - `Collection<TSchema>`
@@ -17,8 +26,7 @@ This page documents the main application-layer handles:
 
 ## `Db`
 
-The `Db` constructor is created internally by the client, but the public
-surface is what matters:
+The public `Db` surface is:
 
 - `databaseName`
 - `collection(name)`
@@ -30,15 +38,20 @@ surface is what matters:
 
 ### `databaseName`
 
-The selected database name for the handle.
+The selected database for this handle.
 
 ### `collection(name)`
 
 Creates a collection handle.
 
+```ts
+const db = client.db("default");
+const products = db.collection("products");
+```
+
 ### `createCollection(name)`
 
-Creates the collection on the server and returns:
+Creates the collection and returns:
 
 ```ts
 type CreateCollectionResult = {
@@ -52,86 +65,225 @@ Returns a readonly array of collection names.
 
 ### `dropCollection(name)`
 
-Convenience wrapper around `db.collection(name).drop()`.
+Drops one collection by name.
 
 ### `dropDatabase()`
 
-Sends a database-drop request for the current database handle.
+Drops the current database handle's database.
 
 ### `query(collection, filter?, options?)`
 
-This is a database-level query entrypoint that returns a `FindCursor`.
+Database-level query entrypoint that returns a `FindCursor`.
+
+```ts
+const rows = await db.query(
+  "products",
+  {inStock: true},
+  {sort: {price: 1}, limit: 10},
+).toArray();
+```
 
 ## `Collection<TSchema>`
 
 This is the main typed document handle.
 
-### Creating a typed collection
+### Typed collections
 
 <Tabs groupId="code" queryString="code" defaultValue="ts">
   <TabItem value="ts" label="TypeScript">
 
 ```ts
-import {LioranDBClient} from "@liorandb/driver";
-
 type Product = {
   _id?: string;
   sku: string;
   title: string;
   price: number;
   inStock: boolean;
+  docNumber: number;
+  category: string;
 };
 
-const client = await LioranDBClient.connect(
-  "liorandb://admin:password@127.0.0.1:27018/default",
-);
-
-const db = client.db("default");
-const products = db.collection<Product>("products");
+const products = client.db("default").collection<Product>("products");
 ```
 
   </TabItem>
   <TabItem value="js" label="JavaScript">
 
 ```js
-import {LioranDBClient} from "@liorandb/driver";
-
-const client = await LioranDBClient.connect(
-  "liorandb://admin:password@127.0.0.1:27018/default",
-);
-
-const db = client.db("default");
-const products = db.collection("products");
+const products = client.db("default").collection("products");
 ```
 
   </TabItem>
 </Tabs>
 
-### Why TypeScript helps
-
-With `collection<Product>("products")`, TypeScript can:
-
-- validate inserted document shapes
-- improve autocomplete for fields in filters and projections
-- make result objects easier to use safely
-
-## `collectionName`
+### `collectionName`
 
 Returns the collection name string.
+
+## Data model types
+
+The real exported document-related types are:
+
+```ts
+type Document = Record<string, unknown>;
+
+type OptionalUnlessRequiredId<TSchema> = TSchema extends { _id: unknown }
+  ? TSchema
+  : Omit<TSchema, "_id"> & { _id?: unknown };
+
+type WithId<TSchema> = Omit<TSchema, "_id"> & {
+  _id: unknown;
+};
+```
+
+Practical meaning:
+
+- if your schema does not require `_id`, insert methods allow it to be omitted
+- result rows usually come back as normal documents with `_id` included when present
+
+## Filters in detail
+
+The exported filter type is:
+
+```ts
+type Filter<TSchema = Document> = Document & {
+  readonly [K in Extract<keyof TSchema, string>]?: unknown;
+};
+```
+
+This is intentionally broad. The driver accepts:
+
+- normal field equality filters
+- nested operator objects
+- server-specific query shapes like `$text`
+
+Examples:
+
+```ts
+{inStock: true}
+{price: {$gte: 10}}
+{batchTag: "docs", docNumber: {$gte: 4}}
+{
+  $text: {
+    $search: "marker",
+    $field: "title",
+  },
+}
+```
+
+The type system does not try to fully describe every query operator. The final
+validation boundary is the server.
+
+## Query options in detail
+
+The real exported type is:
+
+```ts
+interface FindOptions<TSchema = Document> {
+  readonly limit?: number;
+  readonly skip?: number;
+  readonly projection?: Projection<TSchema>;
+  readonly sort?: Sort;
+  readonly cursor?: {
+    readonly token: string;
+    readonly direction: "next" | "previous";
+  };
+}
+```
+
+### `limit`
+
+Maximum number of rows to return.
+
+```ts
+await products.find({inStock: true}, {limit: 5}).toArray();
+```
+
+### `skip`
+
+Number of matching rows to skip before returning data.
+
+```ts
+await products.find(
+  {inStock: true},
+  {sort: {sku: 1}, skip: 10, limit: 10},
+).toArray();
+```
+
+### `projection`
+
+The real exported type is:
+
+```ts
+type Projection<TSchema = Document> =
+  | readonly (Extract<keyof TSchema, string> | string)[]
+  | Readonly<Record<string, 0 | 1 | boolean>>;
+```
+
+That means these forms are valid:
+
+```ts
+{projection: ["sku", "title"]}
+{projection: {sku: 1, title: 1, _id: 0}}
+```
+
+Examples:
+
+```ts
+const brief = await products.find(
+  {},
+  {projection: ["sku", "title"]},
+).toArray();
+
+const shaped = await products.find(
+  {},
+  {projection: {sku: 1, title: 1, docNumber: 1}},
+).toArray();
+```
+
+### `sort`
+
+The real exported sort types are:
+
+```ts
+type SortDirection = 1 | -1 | "asc" | "desc" | "ascending" | "descending";
+
+type Sort =
+  | Readonly<Record<string, SortDirection>>
+  | readonly (readonly [string, SortDirection])[]
+  | readonly {field: string; direction: "asc" | "desc"}[];
+```
+
+All of these are accepted:
+
+```ts
+{sort: {price: 1}}
+{sort: {price: "desc", sku: "asc"}}
+{sort: [["price", -1], ["sku", 1]]}
+{sort: [{field: "price", direction: "desc"}]}
+```
+
+### `cursor`
+
+The token-based page-resume shape:
+
+```ts
+{
+  cursor: {
+    token: "opaque-server-token",
+    direction: "next",
+  },
+}
+```
+
+Most application code will not set this directly. It is primarily for advanced
+paging flows.
 
 ## Write methods
 
 ### `insertOne(document, options?)`
 
-Signature behavior:
-
-- document type is `OptionalUnlessRequiredId<TSchema>`
-- optional `idempotencyKey` can be supplied
-
-Example:
-
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
+Inserts one document.
 
 ```ts
 const result = await products.insertOne(
@@ -140,54 +292,59 @@ const result = await products.insertOne(
     title: "Blue Notebook",
     price: 14,
     inStock: true,
+    docNumber: 1,
+    category: "paper",
   },
-  {idempotencyKey: "product-insert-001"},
+  {idempotencyKey: "products-insert-one-001"},
 );
 
 console.log(result.insertedId);
 ```
-
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
-
-```js
-const result = await products.insertOne(
-  {
-    sku: "bk-001",
-    title: "Blue Notebook",
-    price: 14,
-    inStock: true,
-  },
-  {idempotencyKey: "product-insert-001"},
-);
-
-console.log(result.insertedId);
-```
-
-  </TabItem>
-</Tabs>
-
-Representative output:
-
-<Terminal title="insertOne output">
-
-```text
-01K2EXAMPLE
-```
-
-</Terminal>
 
 ### `insertMany(documents, options?)`
 
-Inserts multiple documents and returns `insertedIds`.
+Inserts multiple documents and returns:
+
+```ts
+type InsertManyResult = {
+  readonly insertedIds: readonly unknown[];
+};
+```
 
 ### `updateOne(filter, update, options?)`
 
 Updates one matching document.
 
+The real options type is:
+
+```ts
+interface UpdateOptions {
+  readonly idempotencyKey?: string;
+  readonly upsert?: boolean;
+}
+```
+
+Example:
+
+```ts
+await products.updateOne(
+  {sku: "bk-001"},
+  {$set: {inStock: false}},
+  {upsert: false, idempotencyKey: "products-update-one-001"},
+);
+```
+
 ### `updateMany(filter, update, options?)`
 
-Updates every matching document.
+Updates all matching documents.
+
+```ts
+await products.updateMany(
+  {category: "tools"},
+  {$set: {inStock: true}},
+  {upsert: false},
+);
+```
 
 ### `deleteOne(filter, options?)`
 
@@ -195,7 +352,7 @@ Deletes one matching document.
 
 ### `deleteMany(filter, options?)`
 
-Deletes all matching documents.
+Deletes every matching document.
 
 ## Read methods
 
@@ -203,28 +360,11 @@ Deletes all matching documents.
 
 Returns a `FindCursor<TSchema>`.
 
-Example:
-
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
-
 ```ts
 const docs = await products
   .find({inStock: true}, {sort: {price: 1}, limit: 5})
   .toArray();
 ```
-
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
-
-```js
-const docs = await products
-  .find({inStock: true}, {sort: {price: 1}, limit: 5})
-  .toArray();
-```
-
-  </TabItem>
-</Tabs>
 
 ### `findOne(filter?, options?)`
 
@@ -232,10 +372,208 @@ Returns the first matching document or `null`.
 
 ### `findManyByIds(ids)`
 
-Looks up a readonly list of ids and returns a readonly array whose entries are:
+Looks up a readonly list of ids and returns a readonly array where each entry is:
 
-- the document if found
-- `null` if not found
+- the matching document
+- or `null` if that id was not found
+
+```ts
+const rows = await products.findManyByIds([
+  "id-1",
+  "id-2",
+  "missing-id",
+]);
+```
+
+The returned array preserves positional alignment with the input ids.
+
+### `countDocuments(filter?)`
+
+Counts matching documents and returns a number.
+
+The docs test currently verifies:
+
+- `countDocuments()` on all inserted test rows
+- `countDocuments(filter)` on filtered subsets
+
+Example:
+
+```ts
+const total = await products.countDocuments();
+const inStock = await products.countDocuments({inStock: true});
+```
+
+Representative output:
+
+<Terminal title="countDocuments output">
+
+```text
+42
+```
+
+</Terminal>
+
+## Real query patterns verified by the docs test
+
+### Equality query
+
+```ts
+await products.find({sku: "bk-001"}).toArray();
+```
+
+### Range query
+
+```ts
+await products.find(
+  {docNumber: {$gte: 4}},
+  {sort: {docNumber: 1}},
+).toArray();
+```
+
+```ts
+await products.find(
+  {price: {$gte: 20}},
+  {sort: {price: 1}},
+).toArray();
+```
+
+### Sorted and paged query
+
+```ts
+await products.find(
+  {inStock: true},
+  {sort: {docNumber: 1}, skip: 1, limit: 3},
+).toArray();
+```
+
+### Projected query
+
+```ts
+await products.find(
+  {inStock: true},
+  {projection: {docNumber: 1, title: 1}},
+).toArray();
+```
+
+### Text query
+
+```ts
+await products.find({
+  $text: {
+    $search: "Marker",
+    $field: "title",
+  },
+}).toArray();
+```
+
+## Index methods
+
+### `createIndex(fieldOrDefinition, options?)`
+
+Creates a secondary index.
+
+The real option type is:
+
+```ts
+interface CreateIndexOptions {
+  readonly name?: string;
+  readonly unique?: boolean;
+  readonly sparse?: boolean;
+  readonly partialFilter?: Document;
+}
+```
+
+The real definition type is:
+
+```ts
+interface CreateIndexDefinition extends CreateIndexOptions {
+  readonly field?: string;
+  readonly fields?: readonly (
+    | string
+    | {
+        readonly field: string;
+        readonly direction?: SortDirection | "Asc" | "Desc";
+      }
+  )[];
+}
+```
+
+Examples:
+
+```ts
+await products.createIndex("sku", {
+  name: "sku_idx",
+  unique: true,
+});
+
+await products.createIndex({
+  name: "category_price_idx",
+  fields: [
+    {field: "category", direction: "asc"},
+    {field: "price", direction: "desc"},
+  ],
+});
+
+await products.createIndex({
+  name: "active_price_idx",
+  fields: ["price"],
+  partialFilter: {active: true},
+});
+```
+
+The docs test verifies that created secondary indexes can be:
+
+- listed
+- queried against
+- dropped
+
+### `createTextIndex(field, options?)`
+
+Creates a text index.
+
+The real text-index option type is:
+
+```ts
+interface TextIndexOptions {
+  readonly normalize?: boolean;
+  readonly stopwords?: readonly string[];
+}
+```
+
+Example:
+
+```ts
+await products.createTextIndex("title", {
+  normalize: true,
+  stopwords: ["set"],
+});
+```
+
+### `listIndexes()`
+
+Returns `readonly CollectionIndexDefinition[]`.
+
+The real returned definition shape includes:
+
+- `name`
+- `fields`
+- `unique`
+- `sparse`
+- `partialFilter`
+- `buildState`
+- `buildProgress`
+- `isText`
+- `implicit`
+
+### `dropIndex(name, options?)`
+
+Drops an index by name and returns:
+
+```ts
+type DropIndexResult = {
+  readonly name: string;
+};
+```
 
 ## Aggregation
 
@@ -243,53 +581,38 @@ Looks up a readonly list of ids and returns a readonly array whose entries are:
 
 Returns an `AggregationCursor<TResult>`.
 
-Example:
-
-<Tabs groupId="code" queryString="code" defaultValue="ts">
-  <TabItem value="ts" label="TypeScript">
+The currently exported options type is intentionally minimal:
 
 ```ts
-const results = await products
-  .aggregate<{_id: string; count: number}>([
-    {$match: {inStock: true}},
-    {$group: {_id: "$inStock", count: {$sum: 1}}},
-  ])
-  .toArray();
-
-console.log(results);
+interface AggregateOptions {
+  readonly allowDiskUse?: never;
+}
 ```
 
-  </TabItem>
-  <TabItem value="js" label="JavaScript">
+That means the driver does not currently expose rich aggregation options. The
+main control point is the pipeline itself.
 
-```js
-const results = await products
-  .aggregate([
-    {$match: {inStock: true}},
-    {$group: {_id: "$inStock", count: {$sum: 1}}},
-  ])
-  .toArray();
+Current server-compatible aggregation stages verified by the docs test:
 
-console.log(results);
+- `$match`
+- `$group`
+- `$project` for simple field inclusion
+- `$skip`
+- `$limit`
+
+Example:
+
+```ts
+const results = await products.aggregate([
+  {$match: {inStock: true}},
+  {$group: {_id: "$category", count: {$sum: 1}}},
+]).toArray();
 ```
 
-  </TabItem>
-</Tabs>
+Caveats backed by current testing:
 
-Representative output:
-
-<Terminal title="aggregate output">
-
-```json
-[
-  {
-    "_id": true,
-    "count": 1
-  }
-]
-```
-
-</Terminal>
+- aggregation `$sort` is not documented as supported here
+- grouped row ordering should not be assumed stable
 
 ## `drop(options?)`
 
@@ -303,11 +626,12 @@ Drops the collection and returns:
 
 ## `FindCursor<TSchema>`
 
-The source implements `FindCursor<TSchema>` as:
+`FindCursor` is:
 
-- a chainable query-definition object
-- an async iterable
-- a lifecycle-aware cursor that closes if the client closes
+- chainable
+- async iterable
+- lazily paged
+- lifecycle-bound to the client
 
 ### Query-shaping methods
 
@@ -317,7 +641,11 @@ The source implements `FindCursor<TSchema>` as:
 - `sort(sort)`
 - `project(projection)`
 
-Each returns a new `FindCursor`.
+These methods return a new cursor definition.
+
+Important source-backed rule:
+
+- once execution starts, changing the definition throws `CursorInitializedError`
 
 ### Execution methods
 
@@ -339,35 +667,47 @@ Each returns a new `FindCursor`.
 
 ### `next()`
 
-Reads the next document or returns `null`.
+Returns the next document or `null`.
+
+### `tryNext()`
+
+Currently behaves the same as `next()`.
+
+### `hasNext()`
+
+Returns whether another row is available.
 
 ### `toArray()`
 
 Drains the remaining cursor contents and returns a readonly array.
 
+If you already consumed some rows with `next()`, `toArray()` returns only the
+remaining rows.
+
 ### `forEach()`
 
-Runs an async or sync callback for every document.
+Runs a sync or async callback for each row.
 
 ### `map()`
 
-Transforms cursor results and returns a readonly array of mapped results.
+Transforms rows and returns a readonly array of mapped values.
 
 ### `rewind()`
 
-Resets the cursor’s consumed position and fetch state.
+Resets local consumption state so the cursor can be read again from the same
+definition.
 
 ### `clone()`
 
 Creates a fresh cursor with the same definition.
 
+Use this when you want multiple independent consumers.
+
 ### Mutation rule
 
-Once execution starts, query-shaping methods can no longer mutate the cursor.
-If you try to change the query after execution starts, the source throws
-`CursorInitializedError`.
+Once execution has started, query-shaping methods are no longer allowed.
 
-Representative example:
+Representative runtime error:
 
 <Terminal title="Cursor error example">
 
@@ -379,10 +719,7 @@ Cursor options cannot be changed after execution has started. Clone the cursor f
 
 ## `AggregationCursor<TResult>`
 
-The aggregation cursor is similar, but it loads from `fetchAll(...)` instead of
-page-by-page find calls.
-
-Supported public methods:
+The aggregation cursor supports:
 
 - `next()`
 - `tryNext()`
@@ -394,33 +731,20 @@ Supported public methods:
 - `clone()`
 - `close()`
 
-## Common option types
+Important implementation detail from the real source:
 
-### `FindOptions<TSchema>`
+- `FindCursor` pages incrementally
+- `AggregationCursor` fetches the full aggregation result set when first loaded
 
-```ts
-interface FindOptions<TSchema> {
-  readonly limit?: number;
-  readonly skip?: number;
-  readonly projection?: Projection<TSchema>;
-  readonly sort?: Sort;
-  readonly cursor?: {
-    readonly token: string;
-    readonly direction: "next" | "previous";
-  };
-}
-```
+So for large flows:
 
-### `UpdateOptions`
+- use `find()` when you want more streaming-like pagination
+- use `aggregate()` when you want a derived result set and can tolerate
+  full-result materialization
 
-```ts
-interface UpdateOptions {
-  readonly idempotencyKey?: string;
-  readonly upsert?: boolean;
-}
-```
+## Cursor cancellation
 
-### `CursorOperationOptions`
+The real cursor operation type is:
 
 ```ts
 interface CursorOperationOptions {
@@ -428,8 +752,13 @@ interface CursorOperationOptions {
 }
 ```
 
-Use `signal` when you need cancellation in long-running query or aggregation
-flows.
+That `signal` can be passed to methods like:
+
+```ts
+await cursor.next({signal});
+await cursor.toArray({signal});
+await aggregateCursor.toArray({signal});
+```
 
 ## Read next
 
