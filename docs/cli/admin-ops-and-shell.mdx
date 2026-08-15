@@ -1,7 +1,7 @@
 ---
 sidebar_position: 5
 title: Admin, Ops, and Shell
-description: User management, roles, settings, diagnostics, backups, and the interactive shell.
+description: Detailed documentation for user management, roles, settings, cluster operations, backups, diagnostics, and the interactive CLI shell.
 ---
 
 import Terminal from '@site/src/components/Terminal';
@@ -31,6 +31,16 @@ Useful flags:
 - `user update --metadata <json>`
 - `user delete --yes`
 
+Important source-backed behavior:
+
+- `user show` accepts either a user id or username
+- if direct lookup by id fails, the CLI falls back to listing users and matching by username
+- `user update --enabled` and `user update --disabled` are mutually exclusive
+- `user update --metadata <json>` requires a JSON object and stringifies non-string values
+- `user delete` prompts unless `--yes`
+- `user reset-password` always prompts for the new password interactively
+- `user revoke-sessions` revokes every session for that user, not just one session id
+
 Example:
 
 <Terminal title="User management">
@@ -46,7 +56,7 @@ liorandb user revoke-sessions 01K2USER
 
 ## Role and permission commands
 
-From `src/commands/role.ts`, the CLI supports:
+The CLI supports:
 
 - `role list`
 - `role show <id>`
@@ -62,6 +72,14 @@ Permission@cluster
 Permission@db.collection
 ```
 
+Important source-backed behavior:
+
+- before parsing grants, the CLI fetches the server-advertised permission set
+- grant text is validated against that live permission set
+- `role create` and `role update` can prompt for grants interactively when none are provided
+- `role delete` looks up the role first so it can confirm using the human-readable role name
+- `permission list` renders the permission names currently advertised by the server, not a hard-coded local list
+
 Example:
 
 <Terminal title="Roles and permissions">
@@ -76,11 +94,19 @@ liorandb role update 01K2ROLE --grant ReadDocuments@default.users WriteDocuments
 
 ## Settings and CORS
 
-From `src/commands/settings.ts`, the CLI supports:
+The CLI supports:
 
 - `settings show`
 - `settings get <key>`
 - `settings set <key> <value>`
+- `settings performance show`
+- `settings performance set`
+- `settings limits show`
+- `settings limits set`
+- `settings backups show`
+- `settings backups set`
+- `settings cors show`
+- `settings cors set`
 - `cors list`
 - `cors add <origin>`
 - `cors remove <origin>`
@@ -90,12 +116,68 @@ The settings layer has a useful source detail:
 - it decodes strings like `true`, `false`, `null`, numbers, objects, and arrays into human-readable values when printing
 - it validates JSON-looking values before sending them back
 
+### `liorandb settings show`
+
+Shows the generic key/value settings map returned by the server.
+
+The CLI decodes string-like values into:
+
+- booleans
+- null
+- numbers
+- arrays
+- objects
+
+when possible, so the output is easier to read.
+
+### `liorandb settings get <key>`
+
+Shows one decoded setting value by key.
+
+If the key does not exist, the command fails with a CLI error.
+
+### `liorandb settings set <key> <value>`
+
+Writes one generic setting key.
+
+The CLI:
+
+- keeps plain strings as strings
+- preserves JSON-looking arrays and objects after validating them
+- preserves scalar booleans, null, and numbers as raw values
+
+### Structured settings commands
+
+The CLI also exposes typed settings surfaces from the driver:
+
+- `settings performance show | set`
+- `settings limits show | set`
+- `settings backups show | set`
+- `settings cors show | set`
+
+These commands:
+
+- read the current structured object from the server
+- or replace the full structured object using `--json`, `--file`, or `--stdin`
+
+### CORS convenience commands
+
+The standalone `cors` group is a convenience wrapper over the structured CORS settings API.
+
+- `cors list` prints `allowed_origins`
+- `cors add <origin>` appends an origin if not already present
+- `cors remove <origin>` removes one origin from the list
+
 <Terminal title="Settings and CORS">
 
 ```bash
 liorandb settings show
 liorandb settings get max_connections
 liorandb settings set max_connections 500
+liorandb settings performance show
+liorandb settings limits show
+liorandb settings backups show
+liorandb settings cors show
 liorandb cors add https://app.example.com
 liorandb cors list
 ```
@@ -104,7 +186,7 @@ liorandb cors list
 
 ## Status, doctor, metrics, and stats
 
-From `src/commands/ops.ts`, the main operations commands are:
+The main operations commands are:
 
 - `status`
 - `health`
@@ -134,6 +216,61 @@ Source-backed behavior worth knowing:
 - `metrics --raw` fetches a literal metrics endpoint and requires either `--metrics-url`, a stored profile `metricsUrl`, or `LIORANDB_METRICS_URL`
 - `status` and `metrics` both support `--watch` and `--interval <seconds>`
 
+### `liorandb status`
+
+Combines:
+
+- unauthenticated `/live`
+- unauthenticated `/ready`
+- unauthenticated server-info lookup
+- authenticated cluster summary
+- authenticated cluster health
+
+into one operator summary.
+
+### `liorandb health`
+
+Prints partition-health rows including:
+
+- partition id
+- role
+- read-only state
+- leader and replica LSNs
+- WAL in-flight data
+- checkpoint timing
+
+### `liorandb doctor`
+
+Runs lightweight diagnostics for:
+
+- configuration validity
+- DNS lookup
+- HTTP endpoint reachability
+- readiness reachability
+- authentication
+- gRPC discovery
+- cluster health
+
+### `liorandb metrics`
+
+Without `--raw`, prints a metrics summary derived from authenticated APIs.
+
+With `--raw`, fetches a literal metrics endpoint and requires:
+
+- `--metrics-url <url>`, or
+- a stored profile metrics URL, or
+- `LIORANDB_METRICS_URL`
+
+### `liorandb stats`
+
+Shows available high-level inventory data such as:
+
+- database count
+- collections per database
+- cluster node count
+- partition count
+- cluster healthy flag
+
 ## Cluster commands
 
 The cluster subgroup supports:
@@ -142,11 +279,59 @@ The cluster subgroup supports:
 - `cluster nodes`
 - `cluster partitions`
 - `cluster health`
+- `cluster readiness`
 - `cluster checkpoint`
 - `cluster compact`
 
 The source protects mutating cluster operations with confirmation prompts unless
 `--yes` is passed.
+
+### `liorandb cluster status`
+
+Shows cluster summary fields such as:
+
+- node id
+- cluster state
+- node count
+- partition count
+- protocol version
+
+### `liorandb cluster nodes`
+
+Lists cluster nodes and their listen/public/metrics addresses.
+
+### `liorandb cluster partitions`
+
+Lists partition placement, leaders, and replica assignments.
+
+### `liorandb cluster health`
+
+Prints the same partition-health view used by top-level `health`.
+
+### `liorandb cluster readiness`
+
+Shows:
+
+- current readiness state
+- readiness transition count
+- transition rows with state, timestamp, and reason
+
+### `liorandb cluster checkpoint`
+
+Triggers a cluster checkpoint maintenance operation.
+
+Behavior:
+
+- prompts unless `--yes`
+- reports acceptance rather than low-level checkpoint internals
+
+### `liorandb cluster compact`
+
+Triggers cluster compaction.
+
+Behavior:
+
+- prompts unless `--yes`
 
 <Terminal title="Cluster operations">
 
@@ -154,6 +339,7 @@ The source protects mutating cluster operations with confirmation prompts unless
 liorandb cluster status
 liorandb cluster nodes
 liorandb cluster partitions
+liorandb cluster readiness
 liorandb cluster checkpoint --yes
 liorandb cluster compact --yes
 ```
@@ -162,7 +348,7 @@ liorandb cluster compact --yes
 
 ## Backup commands
 
-From `src/commands/backup.ts`, the CLI supports:
+The CLI supports:
 
 - `backup list`
 - `backup create`
@@ -170,6 +356,7 @@ From `src/commands/backup.ts`, the CLI supports:
 - `backup verify <id>`
 - `backup delete <id>`
 - `backup restore <id>`
+- `backup restore-job <id>`
 
 Important safety behaviors in the source:
 
@@ -177,6 +364,52 @@ Important safety behaviors in the source:
 - `backup restore` requires typing `RESTORE <backup-id>` unless `--yes`
 - `backup restore` also supports `--disable-safety-backup`
 - `backup create --scope` only accepts `cluster` or `local_node`
+
+### `liorandb backup list`
+
+Lists backup jobs.
+
+### `liorandb backup create`
+
+Creates a backup job.
+
+Supported options:
+
+- `--label <label>`
+- `--scope <scope>`
+
+### `liorandb backup show <id>`
+
+Shows a backup record in detail.
+
+### `liorandb backup verify <id>`
+
+Runs backup verification for one backup id.
+
+### `liorandb backup delete <id>`
+
+Deletes a backup record and associated archive.
+
+### `liorandb backup restore <id>`
+
+Schedules a restore.
+
+Supported options:
+
+- `--yes`
+- `--disable-safety-backup`
+
+### `liorandb backup restore-job <id>`
+
+Shows a scheduled restore job in detail.
+
+This is useful after a restore request when you want to inspect:
+
+- restore job status
+- failure details
+- safety backup id
+- validation results
+- per-node progress
 
 Example:
 
@@ -188,6 +421,7 @@ liorandb backup create --label nightly --scope cluster
 liorandb backup show 01K2BACKUP
 liorandb backup verify 01K2BACKUP
 liorandb backup restore 01K2BACKUP
+liorandb backup restore-job 01K2RESTORE
 ```
 
 </Terminal>
@@ -215,6 +449,7 @@ liorandb shell
 - multiline input
 - safe JSON-like parsing instead of arbitrary JavaScript execution
 - in-shell login and logout
+- shell access to newer CLI surfaces such as readiness, settings, backups, count, ID lookup, and indexes
 
 ### Meta commands
 
@@ -237,6 +472,24 @@ The parser exposes these dot-commands:
 - `.users`
 - `.roles`
 - `.permissions`
+- `.cluster.status`
+- `.cluster.nodes`
+- `.cluster.partitions`
+- `.cluster.health`
+- `.cluster.readiness`
+- `.cluster.checkpoint`
+- `.cluster.compact`
+- `.settings`
+- `.settings.performance`
+- `.settings.limits`
+- `.settings.backups`
+- `.settings.cors`
+- `.backup.list`
+- `.backup.create [label] [scope]`
+- `.backup.show <backupId>`
+- `.backup.verify <backupId>`
+- `.backup.delete <backupId>`
+- `.backup.restore-job <jobId>`
 - `.metrics`
 - `.stats`
 - `.clear`
@@ -250,12 +503,18 @@ The shell supports:
 
 - `db.users.find(filter?, options?)`
 - `db.users.findOne(filter?, options?)`
+- `db.users.findManyByIds([ids])`
+- `db.users.countDocuments(filter?)`
 - `db.users.insertOne(document)`
 - `db.users.insertMany([documents])`
 - `db.users.updateOne(filter, update, options?)`
 - `db.users.updateMany(filter, update, options?)`
 - `db.users.deleteOne(filter)`
 - `db.users.deleteMany(filter)`
+- `db.users.createIndex(definition)`
+- `db.users.createTextIndex(field, options?)`
+- `db.users.listIndexes()`
+- `db.users.dropIndex(name)`
 - `db.users.aggregate(pipeline)`
 
 Example session:
@@ -279,6 +538,13 @@ liorandb [default]> db.users.find({active:true}, {limit: 10})
 
 1 document
 4ms
+
+liorandb [default]> db.users.countDocuments({active:true})
+{
+  "count": 1
+}
+
+2ms
 ```
 
 </Terminal>

@@ -1,59 +1,87 @@
 ---
 sidebar_position: 1
 title: CLI Overview
-description: Source-backed overview of @liorandb/cli@1.0.3 and its real command surface.
+description: Source-backed overview of @liorandb/cli@1.0.4, including global flags, command groups, output modes, storage behavior, and testing coverage.
 ---
 
 import Terminal from '@site/src/components/Terminal';
 
-This section is written from the real CLI package source in
-`C:\pro_projects\Liorandb-Rust\sdks\ldb-cli\ts-js\src`.
+This section is written from the real CLI package source in:
 
-The stable CLI package documented here is:
+- `sdks/ldb-cli/ts-js/src/cli.ts`
+- `sdks/ldb-cli/ts-js/src/commands/*.ts`
+- `sdks/ldb-cli/ts-js/src/shell/*.ts`
 
-<Terminal title="Install @liorandb/cli@1.0.3">
+The docs here are also aligned with the repository smoke test in:
+
+- `sdks/ldb-cli/ts-js/scripts/test-all.mjs`
+
+That test currently covers:
+
+- version and config bootstrap
+- login and session reuse
+- database and collection setup
+- direct CRUD commands
+- shell startup and shell command execution
+- secondary and text index flows
+- cluster readiness and settings inspection
+- backup creation, verification, and cleanup
+
+## Install
+
+<Terminal title="Install @liorandb/cli@1.0.4">
 
 ```bash
-npm i -g @liorandb/cli@1.0.3
+npm i -g @liorandb/cli@1.0.4
 ```
 
 </Terminal>
 
+The installed executable is:
+
+```bash
+liorandb
+```
+
 ## What the CLI actually does
 
-The `liorandb` binary is an operator-facing tool built on top of
-`@liorandb/driver`. From the source, it is responsible for:
+The `liorandb` binary is a source-backed wrapper around `@liorandb/driver`.
+Its job is not to replace the driver protocol logic, but to add operator
+workflow features on top of the real driver APIs.
 
-- storing local CLI profiles
-- storing per-profile refresh-token sessions
-- logging in and rotating passwords
-- picking output modes for humans and automation
-- performing CRUD directly from the terminal
-- managing users, roles, permissions, settings, backups, and cluster operations
-- running an interactive database shell with completion and history
+From the current source, the CLI is responsible for:
 
-## Real global options
+- persisting local profiles
+- persisting per-profile refresh-token sessions
+- validating and storing connection strings
+- resolving output modes for humans and automation
+- prompting before destructive actions
+- exposing direct data-plane commands
+- exposing admin and cluster maintenance commands
+- running an interactive shell with completion and history
 
-The root command in `src/cli.ts` registers these global flags:
+## Global options
 
-- `--profile <name>`
-- `--url <url>`
-- `--output <format>`
-- `--json`
-- `--quiet`
-- `--no-color`
-- `--debug`
+The root command in `src/cli.ts` registers these global options:
 
-These are resolved into runtime options before command handlers run:
+- `--profile <name>`: select a saved CLI profile
+- `--url <url>`: override the stored URL for the current command only
+- `--output <format>`: choose `table`, `json`, `ndjson`, or `quiet`
+- `--json`: shortcut for `--output json`
+- `--quiet`: shortcut for `--output quiet`
+- `--no-color`: disable ANSI colors
+- `--debug`: include stack traces and lower-level driver diagnostics in errors
 
-- `--quiet` forces output mode `quiet`
-- `--json` forces output mode `json`
-- `--output` accepts `table`, `json`, `ndjson`, or `quiet`
-- `--url` overrides the stored profile URL for just the current command
+Behavior notes from the source:
 
-## Command map from the source
+- `--json` and `--quiet` are formatting shortcuts, not separate commands
+- `--url` changes runtime behavior only and does not rewrite stored config
+- `--profile` changes both config lookup and session lookup
+- `--debug` affects rendering when a command fails
 
-### Setup and identity
+## Command map
+
+### Setup and config
 
 - `init`
 - `set url`
@@ -64,23 +92,35 @@ These are resolved into runtime options before command handlers run:
 - `get output`
 - `get metrics-url`
 - `config`
-- `profile list | create | use | show | delete`
+- `profile list`
+- `profile create <name>`
+- `profile use <name>`
+- `profile show <name>`
+- `profile delete <name>`
+
+### Authentication and sessions
+
 - `login`
 - `logout`
 - `whoami`
 - `sessions`
 - `revoke-session`
 - `change-password`
+- `auth login`
+- `auth logout`
+- `auth whoami`
+- `auth sessions`
+- `auth revoke-session`
+- `auth change-password`
 
-### Database and collection commands
+### Database, collection, and direct document commands
 
 - `db list | create | drop | use | current`
 - `collection list | create | drop`
-
-### CRUD commands
-
 - `find`
 - `find-one`
+- `find-by-ids`
+- `count`
 - `insert-one`
 - `insert-many`
 - `update-one`
@@ -89,99 +129,147 @@ These are resolved into runtime options before command handlers run:
 - `delete-many`
 - `aggregate`
 
-### Administration and operations
+### Index commands
+
+- `index list`
+- `index create`
+- `index create-text`
+- `index drop`
+
+### Admin commands
 
 - `user list | show | create | update | delete | reset-password | revoke-sessions`
 - `role list | show | create | update | delete`
 - `permission list`
 - `settings show | get | set`
+- `settings performance show | set`
+- `settings limits show | set`
+- `settings backups show | set`
+- `settings cors show | set`
 - `cors list | add | remove`
+
+### Operational commands
+
 - `status`
 - `health`
 - `doctor`
 - `metrics`
 - `stats`
-- `cluster status | nodes | partitions | health | checkpoint | compact`
-- `backup list | create | show | verify | delete | restore`
+- `cluster status | nodes | partitions | health | readiness | checkpoint | compact`
+- `backup list | create | show | verify | delete | restore | restore-job`
 
 ### Interactive mode
 
 - `shell`
 
-## Typical first-time local flow
+## Typical first local flow
 
 <Terminal title="Bootstrap CLI workflow">
 
 ```bash
 liorandb init
-liorandb set url liorandb://admin:Q7m%21Z2x%40L9p%23R4vK@127.0.0.1:27018/default
-liorandb login admin --password "Q7m!Z2x@L9p#R4vK"
-liorandb change-password --password "YOUR_NEW_STRONG_PASSWORD"
+liorandb set url liorandb://admin:YOUR_PASSWORD@127.0.0.1:27018/default
+printf '%s' "$LIORANDB_PASSWORD" | liorandb login admin --password-stdin
 liorandb db use default
-liorandb collection create users
-liorandb insert-one users --json "{\"name\":\"Ada\",\"active\":true}"
-liorandb find users --filter "{\"active\":true}"
-```
-
-</Terminal>
-
-Representative output:
-
-<Terminal title="Representative output">
-
-```text
-Created collection users in default.
-Inserted document into users.
-+-----------+--------+
-| name      | active |
-+-----------+--------+
-| Ada       | true   |
-+-----------+--------+
+liorandb collection create products
+printf '{"sku":"bk-001","title":"Blue Notebook","active":true}' | liorandb insert-one products --stdin
+liorandb count products
+liorandb shell
 ```
 
 </Terminal>
 
 ## Output modes
 
-The CLI printer in `src/output/printer.ts` supports four modes:
+The shared printer supports four modes.
 
-- `table`: best for humans and default profile usage
-- `json`: one pretty-printed JSON value
-- `ndjson`: one compact JSON object per line
-- `quiet`: print only the most minimal scalar output, or nothing for record sets
+### `table`
 
-Example:
+Default human-readable output. Best for:
 
-<Terminal title="Machine-readable output">
+- `user list`
+- `cluster nodes`
+- `find products`
+
+### `json`
+
+Pretty-printed JSON for one logical result payload. Best for:
+
+- automation with `jq`
+- inspecting exact field names
+- debugging server replies
+
+### `ndjson`
+
+One compact JSON object per line. Best for streaming record sets such as:
+
+- `find`
+
+### `quiet`
+
+Minimal output. Best for:
+
+- CI scripts that only need exit status
+- destructive operations where log noise should stay low
+
+Representative usage:
+
+<Terminal title="Output mode examples">
 
 ```bash
 liorandb find users --filter "{\"active\":true}" --json
 liorandb find users --filter "{\"active\":true}" --output ndjson
+liorandb cluster checkpoint --yes --quiet
 ```
 
 </Terminal>
 
-## Config and session storage
+## Local storage model
 
-The source stores two different kinds of local state:
+The CLI stores two separate local state categories.
 
-- config in a `conf`-managed CLI config file, including current profile, URL, output mode, active database, and metrics URL
-- session state in `~/.liorandb/state/sessions.json` unless `LIORANDB_STATE_DIR` overrides the state root
+### Config storage
 
-What gets persisted:
+Managed through `conf` in `src/config/config-store.ts`.
 
-- profile URL
-- default output format
-- selected database
-- metrics URL
+Stored fields include:
+
+- current profile name
+- per-profile URL
+- per-profile output mode
+- per-profile selected database
+- per-profile raw metrics URL
+
+### Session storage
+
+Managed through `src/auth/session-store.ts`.
+
+Stored fields include:
+
 - refresh token
-- session ID
-- last authenticated username
+- session id
+- username
+- user id
+- update timestamps
 
-What does not get persisted:
+Not stored:
 
 - plaintext passwords
 - short-lived access tokens
+
+By default, session state lives under a `.liorandb/state` directory. The exact
+root can be overridden with `LIORANDB_STATE_DIR`.
+
+## Safety model
+
+The CLI includes several built-in safety checks from the real source:
+
+- `db drop` prompts unless `--yes`
+- `collection drop` prompts unless `--yes`
+- `delete-many` requires typing the collection name when the filter matches everything
+- `backup delete` prompts unless `--yes`
+- `backup restore` requires explicit restore confirmation unless `--yes`
+- shell input is parsed by a restricted JSON-like parser instead of arbitrary JavaScript
 
 ## Mental model
 
@@ -189,13 +277,14 @@ What does not get persisted:
 global flags
   -> runtime context
     -> selected profile
-    -> resolved output mode
-    -> URL override if present
+    -> output mode
+    -> stored or overridden URL
 
-commands
-  -> authenticated client when needed
-  -> Printer for table/json/ndjson/quiet output
-  -> config store and session store for persistence
+command handler
+  -> config/session lookup
+  -> authenticated driver client when needed
+  -> validation and safety prompts
+  -> shared printer
 ```
 
 ## Read next

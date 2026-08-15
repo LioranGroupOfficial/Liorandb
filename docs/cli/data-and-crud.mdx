@@ -1,16 +1,25 @@
 ---
 sidebar_position: 4
 title: Data and CRUD
-description: Database, collection, query, insert, update, delete, and aggregate commands from the real CLI source.
+description: Detailed docs for db, collection, CRUD, count, ID lookup, aggregation, and index commands based on the real CLI source.
 ---
 
 import Terminal from '@site/src/components/Terminal';
 
-The CLI exposes both structural commands and direct CRUD commands.
+This page is based on the real command handlers in:
+
+- `sdks/ldb-cli/ts-js/src/commands/db.ts`
+- `sdks/ldb-cli/ts-js/src/commands/collection.ts`
+- `sdks/ldb-cli/ts-js/src/commands/crud.ts`
+- `sdks/ldb-cli/ts-js/src/commands/indexes.ts`
+
+The examples here are also aligned with the repository smoke test in:
+
+- `sdks/ldb-cli/ts-js/scripts/test-all.mjs`
 
 ## Database commands
 
-From `src/commands/db.ts`, the database command group is:
+The `db` group supports:
 
 - `db list`
 - `db create <name>`
@@ -18,7 +27,59 @@ From `src/commands/db.ts`, the database command group is:
 - `db use <name>`
 - `db current`
 
-Example:
+### `liorandb db list`
+
+Lists databases visible to the current authenticated account.
+
+Human output marks the current database when one is selected.
+
+JSON output includes:
+
+- `current_database`
+- `databases`
+
+### `liorandb db create <name>`
+
+Creates a database through the driver API.
+
+JSON output includes:
+
+- `created`
+- `database`
+
+### `liorandb db drop <name>`
+
+Drops a database through the driver API.
+
+Safety behavior from the source:
+
+- prompts before deletion unless `--yes`
+- if the dropped database was stored as the active profile database, the CLI clears that stored field
+
+JSON output includes:
+
+- `dropped`
+- `database`
+
+### `liorandb db use <name>`
+
+Persists the active database for the selected profile.
+
+This does not create the database. It only updates local CLI config.
+
+JSON output includes:
+
+- `selected`
+- `database`
+- `profile`
+
+### `liorandb db current`
+
+Prints the currently active database resolved for the selected profile.
+
+If no database can be resolved, this command fails with a CLI error.
+
+### Example
 
 <Terminal title="Database workflow">
 
@@ -39,13 +100,46 @@ Important source behavior:
 
 ## Collection commands
 
-From `src/commands/collection.ts`, the collection group is:
+The `collection` group supports:
 
 - `collection list`
 - `collection create <name>`
 - `collection drop <name>`
 
-You can override the active database with `--db <database>`.
+All collection commands support `--db <database>` to override the active database.
+
+### `liorandb collection list`
+
+Lists collections in the resolved database.
+
+JSON output includes:
+
+- `database`
+- `collections`
+
+### `liorandb collection create <name>`
+
+Creates a collection in the resolved database.
+
+JSON output includes:
+
+- `created`
+- `database`
+- `collection`
+
+### `liorandb collection drop <name>`
+
+Drops a collection in the resolved database.
+
+Safety behavior from the source:
+
+- prompts before deletion unless `--yes`
+
+JSON output includes:
+
+- `dropped`
+- `database`
+- `collection`
 
 <Terminal title="Collection workflow">
 
@@ -57,7 +151,7 @@ liorandb collection drop old-users --yes
 
 </Terminal>
 
-## JSON input styles
+## JSON input and query input styles
 
 CRUD commands use helpers from `src/utils/input.ts` and accept JSON from:
 
@@ -66,7 +160,35 @@ CRUD commands use helpers from `src/utils/input.ts` and accept JSON from:
 - `--stdin`
 - `--ndjson <path>` for `insert-many`
 
-That makes the CLI usable both for one-off commands and scripted pipelines.
+That makes the CLI usable for:
+
+- one-off manual invocations
+- CI and deployment scripts
+- shell pipelines
+- checked-in JSON request files
+
+## Shared query flags
+
+Several data commands share the same query-oriented option set:
+
+- `--db <database>`
+- `--filter <json>`
+- `--filter-file <path>`
+- `--stdin`
+- `--limit <number>`
+- `--skip <number>`
+- `--sort <json>`
+- `--projection <json>`
+
+These are used by:
+
+- `find`
+- `find-one`
+- `count`
+- `update-one`
+- `update-many`
+- `delete-one`
+- `delete-many`
 
 ## Insert commands
 
@@ -96,21 +218,56 @@ Representative output:
 
 ## Find commands
 
-The source supports:
+The CLI supports:
 
 - `find <collection>`
 - `find-one <collection>`
+- `find-by-ids <collection>`
+- `count <collection>`
 
-Shared query flags:
+### `liorandb find <collection>`
 
-- `--db <database>`
-- `--filter <json>`
-- `--filter-file <path>`
+Returns multiple matching documents.
+
+Behavior notes:
+
+- in `ndjson` mode, one document is emitted per line
+- in `table` mode, the cursor is materialized and printed as rows
+- in `json` mode, output is shaped as `{documents, count}`
+
+### `liorandb find-one <collection>`
+
+Returns the first matching document or no result.
+
+Behavior notes:
+
+- in human mode, when no document matches, the CLI prints `No document matched.`
+- in JSON mode, missing results are printed as `{document: null}`
+
+### `liorandb find-by-ids <collection>`
+
+Looks up multiple IDs in one call while preserving input order.
+
+Input options:
+
+- `--json <json>`
+- `--file <path>`
 - `--stdin`
-- `--limit <number>`
-- `--skip <number>`
-- `--sort <json>`
-- `--projection <json>`
+
+Behavior notes:
+
+- expects a JSON array of ids
+- missing ids are returned as `null`
+- JSON output includes both `ids` and `documents`
+
+### `liorandb count <collection>`
+
+Counts matching documents.
+
+Behavior notes:
+
+- in human mode it prints the numeric count directly
+- in JSON mode it prints `{count}`
 
 Example:
 
@@ -119,19 +276,15 @@ Example:
 ```bash
 liorandb find users --filter "{\"active\":true}" --sort "{\"name\":1}" --limit 20
 liorandb find-one users --filter "{\"email\":\"ada@example.com\"}"
+liorandb find-by-ids users --json "[\"user-1\",\"user-2\",\"missing-id\"]"
+liorandb count users --filter "{\"active\":true}"
 ```
 
 </Terminal>
 
-Behavior worth knowing:
-
-- `find` streams one record per line when output mode is `ndjson`
-- in table mode, `find` materializes records and prints them as rows
-- `find-one` prints `"No document matched."` in human mode when nothing is found
-
 ## Update commands
 
-The source registers:
+The CLI registers:
 
 - `update-one <collection>`
 - `update-many <collection>`
@@ -190,6 +343,8 @@ liorandb delete-many users --filter "{}" --yes
 
 ## Aggregation
 
+### `liorandb aggregate <collection>`
+
 The aggregate command expects a JSON array pipeline:
 
 <Terminal title="Aggregate">
@@ -201,6 +356,74 @@ liorandb aggregate users --json "[{\"$match\":{\"active\":true}},{\"$sort\":{\"n
 </Terminal>
 
 If the provided pipeline is not an array, the command throws a CLI error.
+
+## Index commands
+
+The CLI now exposes the driver's index-management surface through the `index` command group.
+
+### `liorandb index list <collection>`
+
+Lists indexes for the target collection.
+
+Supported option:
+
+- `--db <database>`
+
+JSON output includes:
+
+- `indexes`
+
+### `liorandb index create <collection>`
+
+Creates a secondary index.
+
+Definition styles supported by the real handler:
+
+- `--field <field>` for a single-field index
+- `--fields <json>` for a JSON array of compound field definitions
+- `--definition <json>` for a full driver-shaped definition
+- `--file <path>` for a file containing a full driver-shaped definition
+
+Optional modifiers:
+
+- `--name <name>`
+- `--unique`
+- `--sparse`
+- `--partial-filter <json>`
+- `--partial-filter-file <path>`
+
+Examples:
+
+```bash
+liorandb index create users --field email --name users_email_idx --unique
+liorandb index create orders --fields "[{\"field\":\"status\",\"direction\":\"asc\"},{\"field\":\"createdAt\",\"direction\":\"desc\"}]"
+liorandb index create events --field archivedAt --partial-filter "{\"archived\":true}"
+```
+
+### `liorandb index create-text <collection> <field>`
+
+Creates a text index.
+
+Supported options:
+
+- `--db <database>`
+- `--normalize`
+- `--stopwords <json>`
+- `--stopwords-file <path>`
+
+Example:
+
+```bash
+liorandb index create-text articles title --normalize --stopwords "[\"the\",\"a\"]"
+```
+
+### `liorandb index drop <collection> <name>`
+
+Drops an index by name.
+
+Supported option:
+
+- `--db <database>`
 
 ## Human and machine output
 
