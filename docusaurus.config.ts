@@ -84,11 +84,11 @@ const config: Config = {
           title: 'Packages',
           items: [
             {
-              label: '@liorandb/driver@2.0.3',
+              label: '@liorandb/driver@2.0.5',
               href: 'https://www.npmjs.com/package/@liorandb/driver',
             },
             {
-              label: '@liorandb/cli@1.0.3',
+              label: '@liorandb/cli@1.0.5',
               href: 'https://www.npmjs.com/package/@liorandb/cli',
             },
           ],
