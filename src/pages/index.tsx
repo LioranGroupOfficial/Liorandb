@@ -61,7 +61,7 @@ export default function Home(): ReactNode {
                 <code className={styles.commandText}>
                   docker run -d --name liorandb -p 27018:27018 -p{' '}
                   27019:27019 -p 27201:27201 -v{' '}
-                  ldb-data:/var/lib/liorandb/data liorandb:pre-alpha
+                  ldb-data:/var/lib/liorandb/data liorandb/liorandb:pre-alpha
                 </code>
               </div>
               <pre className={styles.outputCode}>
