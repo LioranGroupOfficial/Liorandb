@@ -1,9 +1,9 @@
 .terminal {
-  margin: 1.25rem 0;
-  border: 1px solid #35363a;
-  border-radius: 18px;
+  margin: 1.5rem 0;
+  border: 1px solid #2c2d31;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: #17181b;
+  background-color: #171717;
   box-shadow: none;
 }
 
@@ -12,45 +12,48 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.8rem 1rem;
-  background: #1b1c20;
+  padding: 0.75rem 1.25rem;
+  background-color: #1a1a1a;
   border-bottom: 1px solid #2c2d31;
 }
 
 .dots {
   display: inline-flex;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 6px;
 }
 
 .dot {
-  width: 0.72rem;
-  height: 0.72rem;
-  border-radius: 999px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
 }
 
 .dot:nth-child(1) {
-  background: #fb7185;
+  background-color: #ef4444;
 }
 
 .dot:nth-child(2) {
-  background: #facc15;
+  background-color: #f59e0b;
 }
 
 .dot:nth-child(3) {
-  background: #4ade80;
+  background-color: #22c55e;
 }
 
 .title {
   color: #e5e7eb;
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .body {
   padding: 0;
   overflow-x: auto;
-  background: #17181b;
+  background-color: #171717;
+  color: #f5f5f7;
 }
 
 .body :global(.theme-code-block) {
@@ -58,19 +61,26 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  background: #17181b;
+  background-color: #171717;
 }
 
 .body :global(.theme-code-block pre),
 .body :global(pre) {
   margin: 0;
-  padding: 1.15rem 1.2rem 1.2rem;
-  background: #17181b;
+  padding: 1.25rem 1.5rem !important;
+  background-color: #171717 !important;
+  color: #f5f5f7 !important;
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .body :global(code) {
-  background: transparent;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  color: #f5f5f7 !important;
 }

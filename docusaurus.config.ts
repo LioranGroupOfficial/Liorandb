@@ -37,8 +37,8 @@ const config: Config = {
   themeConfig: {
     image: 'img/liorandb-social-card.jpg',
     colorMode: {
-      defaultMode: 'dark',
-      disableSwitch: true,
+      defaultMode: 'light',
+      disableSwitch: false,
       respectPrefersColorScheme: false,
     },
     navbar: {
@@ -110,7 +110,7 @@ const config: Config = {
       copyright: `Copyright © ${new Date().getFullYear()} LioranDB. Built with Docusaurus.`,
     },
     prism: {
-      theme: prismThemes.github,
+      theme: prismThemes.dracula,
       darkTheme: prismThemes.dracula,
     },
   } satisfies Preset.ThemeConfig,
